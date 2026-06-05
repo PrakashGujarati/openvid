@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { AspectRatioSelect } from "@/app/components/ui/AspectRatioSelect";
 import { TooltipAction } from "@/components/ui/tooltip-action";
 import { ImageMaskEditor } from "./ImageMaskEditor";
+import { NRX, NRY } from "@/lib/animation-core";
 import {
     Popover,
     PopoverTrigger,
@@ -15,7 +16,8 @@ import {
     PopoverHeader,
     PopoverTitle,
 } from "@/components/ui/popover";
-import { PhotoEditorPlaceholderProps, Preview3DConfig, PREVIEW_CONFIGS } from "@/types/photo.types";
+import { PhotoEditorPlaceholderProps, Preview3DConfig, PREVIEW_CONFIGS, PREVIEW_TO_PHONE_OFFSET } from "@/types/photo.types";
+import { useMotionContext } from "@/app/contexts/MotionContext";
 
 export function PhotoEditorPlaceholder({
     className = "",
@@ -32,11 +34,11 @@ export function PhotoEditorPlaceholder({
     onToggle3DBackground,
     imageMaskConfig,
     onImageMaskConfigChange,
-    imageTransform,
     onReset,
 }: PhotoEditorPlaceholderProps) {
     const previewImageUrl = staticImageUrl ?? canvasImageUrl;
     const t = useTranslations("editor");
+    const { imagePhoneActive, setImagePhoneRotX, setImagePhoneRotY, setImagePhonePresetId } = useMotionContext();
     const [customConfig, setCustomConfig] = useState<Preview3DConfig>({
         id: "custom",
         label: "Custom",
@@ -122,21 +124,27 @@ export function PhotoEditorPlaceholder({
                     }
                     onSelectPreview?.(config);
                     if (isCustom) setIsCustomPopoverOpen(true);
+                    if (imagePhoneActive) {
+                        const offset = PREVIEW_TO_PHONE_OFFSET[config.id];
+                        if (offset) {
+                            setImagePhoneRotX(offset.rx);
+                            setImagePhoneRotY(offset.ry);
+                            setImagePhonePresetId(config.id);
+                        }
+                    }
                 }}
-                className={`group relative shrink-0 w-32 sm:w-62 aspect-video squircle-element p-px transition-all duration-300 ease-out outline-none ${
-                    isSelected
-                        ? `shadow-[0_0_20px_rgba(0,163,255,0.15)]`
-                        : isCustom && isCustomUntouched
-                            ? "bg-gradient-radial-primary border border-dashed border-white/20 hover:border-white/40"
-                            : "bg-white/10 hover:bg-white/20"
-                }`}
+                className={`group relative shrink-0 w-32 sm:w-62 aspect-video squircle-element p-px transition-all duration-300 ease-out outline-none ${isSelected
+                    ? `shadow-[0_0_20px_rgba(0,163,255,0.15)]`
+                    : isCustom && isCustomUntouched
+                        ? "bg-gradient-radial-primary border border-dashed border-white/20 hover:border-white/40"
+                        : "bg-white/10 hover:bg-white/20"
+                    }`}
                 aria-label={config.label}
                 aria-pressed={isSelected}
             >
                 <div
-                    className={`relative w-full h-full rounded-[10px] overflow-hidden transition-colors ${
-                        isCustom && isCustomUntouched ? "bg-transparent" : "bg-black/90"
-                    }`}
+                    className={`relative w-full h-full rounded-[10px] overflow-hidden transition-colors ${isCustom && isCustomUntouched ? "bg-transparent" : "bg-black/90"
+                        }`}
                 >
                     {(!isCustom || !isCustomUntouched) && (
                         <div
@@ -165,31 +173,86 @@ export function PhotoEditorPlaceholder({
                                     {t("photoPreview.custom.customize")}
                                 </div>
                             )}
-                            <div className="absolute inset-0 flex items-center justify-center p-2 z-10">
-                                <div
-                                    style={{
-                                        perspective: `${config.perspective || 600}px`,
-                                        perspectiveOrigin: 'center center'
-                                    }}
-                                    className="w-full h-full flex items-center justify-center"
-                                >
+                            {/* 3D preview: phone shape when phone active, CSS-transformed image otherwise */}
+                            <div className="absolute inset-0 flex items-center justify-center z-10">
+                                {imagePhoneActive ? (
+                                    (() => {
+                                        // Usar el offset de Three.js para que la thumbnail coincida con el canvas
+                                        const phoneOffset = PREVIEW_TO_PHONE_OFFSET[config.id];
+                                        const previewRx = (phoneOffset?.rx ?? 0) + NRX;  // total = NRX + userOffset
+                                        const previewRy = (phoneOffset?.ry ?? 0) + NRY;
+                                        const cssRy = -previewRy;  // invertir para CSS
+                                        return (
+                                            <div style={{
+                                                perspective: `${Math.round((config.perspective || 600) * 0.55)}px`,
+                                                perspectiveOrigin: 'center center',
+                                            }}>
+                                                <div style={{
+                                                    transform: `rotateX(${previewRx}deg) rotateY(${cssRy}deg)`,
+                                                    transformStyle: 'preserve-3d',
+                                                    transition: 'transform 300ms cubic-bezier(0.25, 0.46, 0.45, 0.94)',
+                                                    width: 53,
+                                                    height: 106,
+                                                    borderRadius: '8px',
+                                                    border: '2px solid rgba(255,255,255,0.20)',
+                                                    background: 'linear-gradient(150deg, #151520 0%, #0d0d15 100%)',
+                                                    boxShadow: '0 8px 24px rgba(0,0,0,0.6)',
+                                                    position: 'relative',
+                                                }}>
+                                                    {/* Pantalla */}
+                                                    <div style={{
+                                                        position: 'absolute', top: 5, left: 4, right: 4, bottom: 5,
+                                                        borderRadius: '5px',
+                                                        border: '0.5px solid rgba(255,255,255,0.06)',
+                                                        overflow: 'hidden',
+                                                        ...(previewImageUrl
+                                                            ? { backgroundImage: `url(${previewImageUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+                                                            : { background: 'rgba(0,163,255,0.10)' }
+                                                        ),
+                                                    }} />
+                                                    {/* Bocina */}
+                                                    <div style={{
+                                                        position: 'absolute', top: 2, left: '50%',
+                                                        transform: 'translateX(-50%)',
+                                                        width: 12, height: 1.5, borderRadius: '1px', background: '#000'
+                                                    }} />
+                                                    {/* Detalle inferior */}
+                                                    <div style={{
+                                                        position: 'absolute', bottom: 2, left: '50%',
+                                                        transform: 'translateX(-50%)',
+                                                        width: 16, height: 1.5, borderRadius: '1px',
+                                                        background: 'rgba(255,255,255,0.22)'
+                                                    }} />
+                                                </div>
+                                            </div>
+                                        );
+                                    })()
+                                ) : (
                                     <div
-                                        className="relative w-full h-full rounded-md overflow-hidden border border-white/5 shadow-2xl"
-                                        style={{
-                                            transform: `rotateX(${config.rotateX}deg) rotateY(${config.rotateY}deg) rotateZ(${config.rotateZ}deg) scale(${config.scale}) translateY(${config.translateY}%)`,
-                                            transformStyle: "preserve-3d",
-                                            transition: "transform 300ms cubic-bezier(0.25, 0.46, 0.45, 0.94)",
-                                        }}
+                                        style={{ perspective: `${config.perspective || 600}px`, perspectiveOrigin: 'center center' }}
+                                        className="w-full h-full flex items-center justify-center p-3" /* Padding sutil */
                                     >
-                                        <img
-                                            src={previewImageUrl!}
-                                            alt={config.label}
-                                            className="w-full h-full object-cover"
-                                            draggable={false}
-                                        />
+                                        <div
+                                            className="relative w-full h-full max-w-[92%] max-h-[92%] rounded-lg overflow-hidden border border-white/5 shadow-2xl"
+                                            style={{
+                                                transform: `rotateX(${config.rotateX}deg) rotateY(${config.rotateY}deg) rotateZ(${config.rotateZ}deg) scale(${config.scale}) translateY(${config.translateY}%)`,
+                                                transformStyle: 'preserve-3d',
+                                                transition: 'transform 300ms cubic-bezier(0.25, 0.46, 0.45, 0.94)',
+                                            }}
+                                        >
+                                            {previewImageUrl && (
+                                                <img
+                                                    src={previewImageUrl}
+                                                    alt={config.label}
+                                                    className="w-full h-full object-cover"
+                                                    draggable={false}
+                                                />
+                                            )}
+                                        </div>
                                     </div>
-                                </div>
+                                )}
                             </div>
+
                             <div className="absolute inset-0 bg-linear-to-t from-black/80 via-black/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none z-20" />
                             <div className="absolute bottom-2 left-2 opacity-0 group-hover:opacity-100 transition-all duration-300 translate-y-1 group-hover:translate-y-0 pointer-events-none flex items-center gap-1.5 z-20">
                                 {!isCustom && <Icon icon="mdi:eye-outline" width={12} className="text-white/70" aria-hidden="true" />}
@@ -215,7 +278,7 @@ export function PhotoEditorPlaceholder({
                         {ButtonCard}
                     </PopoverTrigger>
                     <PopoverContent
-                        align="start" 
+                        align="start"
                         sideOffset={12}
                         className="w-64 bg-[#0A0A0A] border-white/10 shadow-2xl p-4 space-y-4 rounded-xl z-50"
                     >
@@ -260,11 +323,13 @@ export function PhotoEditorPlaceholder({
                                         const rect = e.currentTarget.getBoundingClientRect();
                                         const x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
                                         const y = ((e.clientY - rect.top) / rect.height) * 2 - 1;
-
-                                        updateCustomConfig({
-                                            rotateY: Math.round(-x * 45),
-                                            rotateX: Math.round(y * 45)
-                                        });
+                                        const rY = Math.round(-x * 45);
+                                        const rX = Math.round(y * 45);
+                                        updateCustomConfig({ rotateY: rY, rotateX: rX });
+                                        if (imagePhoneActive) {
+                                            setImagePhoneRotX(rX);
+                                            setImagePhoneRotY(-rY);
+                                        }
                                     }}
                                 >
                                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
@@ -357,11 +422,10 @@ export function PhotoEditorPlaceholder({
                                 variant="outline"
                                 size="sm"
                                 onClick={() => onToggle3DBackground(!apply3DToBackground)}
-                                className={`px-2.5 py-2 text-xs font-medium squircle-element transition-all ${
-                                    apply3DToBackground
-                                        ? "bg-gradient-radial-primary text-cyan-500 border border-cyan-500/50!"
-                                        : "bg-white/5 text-white/50 border border-white/10 hover:bg-white/10"
-                                }`}
+                                className={`px-2.5 py-2 text-xs font-medium squircle-element transition-all ${apply3DToBackground
+                                    ? "bg-gradient-radial-primary text-cyan-500 border border-cyan-500/50!"
+                                    : "bg-white/5 text-white/50 border border-white/10 hover:bg-white/10"
+                                    }`}
                                 aria-label={t("photoPreview.apply3D")}
                                 aria-pressed={apply3DToBackground}
                             >

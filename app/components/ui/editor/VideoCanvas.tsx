@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useEffect, useImperativeHandle, forwardRef, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import type { VideoCanvasHandle, VideoCanvasProps, VideoThumbnail } from "@/types";
 import type { ImageElement, SvgElement } from "@/types/canvas-elements.types";
 import { getCameraLayout } from "@/types/camera.types";
@@ -23,9 +24,22 @@ import { EditorHoverTooltip } from "./EditorHoverTooltip";
 import DropImage from "@/components/ui/DropImage";
 import { LayersPanel } from "./LayersPanel";
 import { Icon } from "@iconify/react";
+import { useMotionContext } from "@/app/contexts/MotionContext";
+
+// Phone3DViewer render canvas dimensions (must match Phone3DViewer.tsx RENDER_W/H)
+const PHONE_RENDER_W = 595;
+const PHONE_RENDER_H = 765;
+
 export type { VideoCanvasHandle, VideoCanvasProps };
 
+const Phone3DViewer = dynamic(
+    () => import("./Phone3DViewer").then((m) => ({ default: m.Phone3DViewer })),
+    { ssr: false }
+);
+
 export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(function VideoCanvas({
+    activeTool: _activeTool,
+    isPlaying = false,
     mediaType = "video",
     imageUrl = null,
     imageRef,
@@ -80,6 +94,32 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
     const wallpaperUrl = getWallpaperUrl(selectedWallpaper);
 
     const hasMedia = mediaType === "video" ? !!videoUrl : !!imageUrl;
+
+    // Motion 3D phone overlay state (reads from shared MotionContext)
+    const {
+        selectedTemplateId, motionDuration, motionImageUrl,
+        motionIntensity, motionStyle, motionVariantId, motionAnimMode,
+        imagePhoneActive, imagePhoneX, imagePhoneY,
+        imagePhoneScale, setImagePhoneScale,
+        imagePhoneRotX, setImagePhoneRotX, imagePhoneRotY, setImagePhoneRotY,
+        imagePhoneDevice, setImagePhoneDevice, imagePhonePresetId, setImagePhonePresetId
+    } = useMotionContext();
+    // Phone shows whenever a real template is selected AND we are in video mode
+    const motionActive = selectedTemplateId !== null && selectedTemplateId !== "none" && mediaType === "video";
+
+    // Ctrl+scroll zoom badge state for image phone overlay
+    const [imagePhoneZoomVisible, setImagePhoneZoomVisible] = useState(false);
+    const imagePhoneZoomTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    // WebGL canvas from image phone Phone3DViewer, captured via onMount prop for export
+    const imagePhoneCanvasRef = useRef<HTMLCanvasElement | null>(null);
+
+    // Model URL for the active device
+    const PHONE_DEVICE_URLS: Record<string, string | undefined> = {
+        phone: undefined,
+        iphone: '/models/iphone-15-pro-max.glb',
+        samsung: '/models/samsung-galaxy-s25-ultra.glb',
+    };
+    const imagePhoneModelUrl = PHONE_DEVICE_URLS[imagePhoneDevice];
 
     // Get current thumbnail for scrubbing preview
     const currentThumbnail = useMemo<VideoThumbnail | null>(() => {
@@ -140,6 +180,7 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
     const shouldShowCustomColor = backgroundTab === "color" && !!backgroundColorCss;
 
     const exportCanvasRef = useRef<HTMLCanvasElement>(null);
+    const phoneOverlayRef = useRef<HTMLDivElement>(null);
     // Foreground canvas — used to render the mockup in isolation so that the
     // WebGL 3D perspective is applied only to the mockup, not to the background.
     const foregroundCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -161,6 +202,11 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
 
     // Image zoom state (for photo mode)
     const [imageZoomScale, setImageZoomScale] = useState(1);
+
+    // Motion phone zoom state (Ctrl + scroll, mirrors image mode behaviour)
+    const [motionZoomScale, setMotionZoomScale] = useState(1);
+    const [motionZoomVisible, setMotionZoomVisible] = useState(false);
+    const motionZoomTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const lastSetVideoUrlRef = useRef<string | null>(null);
     const preservedVideoStateRef = useRef<{ time: number; playing: boolean } | null>(null);
@@ -702,6 +748,35 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
         };
     }, [mediaType, imageUrl]);
 
+    // Motion phone zoom with mouse wheel (Ctrl + scroll) — mirrors image mode behaviour
+    useEffect(() => {
+        if (!motionActive) return;
+
+        const handleWheel = (e: WheelEvent) => {
+            if (!e.ctrlKey && !e.metaKey) return;
+            e.preventDefault();
+            const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
+            setMotionZoomScale(prev => Math.max(0.3, Math.min(3, prev * zoomFactor)));
+            setMotionZoomVisible(true);
+            if (motionZoomTimerRef.current) clearTimeout(motionZoomTimerRef.current);
+            motionZoomTimerRef.current = setTimeout(() => setMotionZoomVisible(false), 1500);
+        };
+
+        const container = previewContainerRef.current;
+        if (!container) return;
+
+        container.addEventListener("wheel", handleWheel, { passive: false });
+        return () => {
+            container.removeEventListener("wheel", handleWheel);
+        };
+    }, [motionActive]);
+
+    // Reset motion zoom when template selection changes
+    useEffect(() => {
+        setMotionZoomScale(1);
+        setMotionZoomVisible(false);
+    }, [selectedTemplateId]);
+
     // Drag & drop handlers for images
     const handleDragOver = (e: React.DragEvent) => {
         if (mediaType !== "image" || !onImageDrop) return;
@@ -1052,6 +1127,17 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
             const { containerX: cX, containerY: cY, containerWidth: cW, containerHeight: cH } = computeContainer();
             drawMockupAndMedia(ctx, cX, cY, cW, cH, image!, true);
             await renderCanvasElements(ctx, canvasElements, canvasWidth, canvasHeight, false);
+            // ── Composite image phone mockup (WebGL snapshot) onto export canvas ──
+            if (imagePhoneActive && imagePhoneCanvasRef.current) {
+                const phoneGL = imagePhoneCanvasRef.current;
+                const domW = canvasDimensions?.width ?? canvasWidth;
+                const pxScale = canvasWidth / domW;
+                const phoneCx = canvasWidth / 2 + imagePhoneX * pxScale;
+                const phoneCy = canvasHeight / 2 + imagePhoneY * pxScale;
+                const drawW = PHONE_RENDER_W * imagePhoneScale * pxScale;
+                const drawH = PHONE_RENDER_H * imagePhoneScale * pxScale;
+                ctx.drawImage(phoneGL, phoneCx - drawW / 2, phoneCy - drawH / 2, drawW, drawH);
+            }
             ctx.restore();
             return;
         }
@@ -1256,7 +1342,7 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
                     camVideo.currentTime = targetTime;
 
                     await new Promise<void>((resolve) => {
-         
+
                         const timeoutId = setTimeout(() => {
                             camVideo.removeEventListener("seeked", onSeeked);
                             resolve();
@@ -1348,6 +1434,81 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
             }
         }
         ctx.restore();
+
+        // ── Phone frame overlay for motion export ──
+        // CSS 3D phone cannot be captured natively; draw a canvas phone bezel so the
+        // export frame shows the phone outline with the video visible through the screen.
+        if (motionActive) {
+            const phoneH = canvasHeight * 0.65;
+            const phoneW = phoneH * (272 / 552);
+            const phoneX = (canvasWidth - phoneW) / 2;
+            const phoneY = (canvasHeight - phoneH) / 2;
+            const scale = phoneW / 272;
+            const outerR = Math.round(44 * scale);
+            const inset = Math.round(5 * scale);
+            const screenR = Math.round(36 * scale);
+
+            ctx.save();
+
+            // Phone bezel — filled with dark color, screen area punched out (even-odd)
+            ctx.beginPath();
+            ctx.roundRect(phoneX, phoneY, phoneW, phoneH, outerR);
+            ctx.roundRect(phoneX + inset, phoneY + inset, phoneW - inset * 2, phoneH - inset * 2, screenR);
+            ctx.fillStyle = "rgba(14, 14, 26, 0.93)";
+            ctx.fill("evenodd");
+
+            // Outer phone border
+            ctx.strokeStyle = "rgba(255,255,255,0.14)";
+            ctx.lineWidth = Math.max(1, 1.5 * scale);
+            ctx.beginPath();
+            ctx.roundRect(phoneX, phoneY, phoneW, phoneH, outerR);
+            ctx.stroke();
+
+            // Screen inner border (subtle)
+            ctx.strokeStyle = "rgba(255,255,255,0.05)";
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.roundRect(phoneX + inset, phoneY + inset, phoneW - inset * 2, phoneH - inset * 2, screenR);
+            ctx.stroke();
+
+            // Dynamic island
+            const diW = phoneW * 0.22;
+            const diH = Math.max(4, phoneH * 0.024);
+            ctx.fillStyle = "#000";
+            ctx.beginPath();
+            ctx.roundRect(phoneX + (phoneW - diW) / 2, phoneY + phoneH * 0.018, diW, diH, diH / 2);
+            ctx.fill();
+
+            // Home indicator
+            const homeW = phoneW * 0.28;
+            const homeH = Math.max(3, 4 * scale);
+            ctx.fillStyle = "rgba(255,255,255,0.28)";
+            ctx.beginPath();
+            ctx.roundRect(phoneX + (phoneW - homeW) / 2, phoneY + phoneH - homeH - inset * 1.5, homeW, homeH, homeH / 2);
+            ctx.fill();
+
+            // Side buttons (left: 2 volume, right: 1 power)
+            const btnW = Math.max(2, 3 * scale);
+            const btnH1 = phoneH * 0.08;
+            const btnH2 = phoneH * 0.11;
+            ctx.fillStyle = "rgba(14,14,26,0.93)";
+            ctx.strokeStyle = "rgba(255,255,255,0.10)";
+            ctx.lineWidth = 1;
+            // volume up
+            ctx.beginPath();
+            ctx.roundRect(phoneX - btnW, phoneY + phoneH * 0.21, btnW, btnH1, btnW / 2);
+            ctx.fill(); ctx.stroke();
+            // volume down
+            ctx.beginPath();
+            ctx.roundRect(phoneX - btnW, phoneY + phoneH * 0.32, btnW, btnH2, btnW / 2);
+            ctx.fill(); ctx.stroke();
+            // power
+            ctx.beginPath();
+            ctx.roundRect(phoneX + phoneW, phoneY + phoneH * 0.27, btnW, btnH2, btnW / 2);
+            ctx.fill(); ctx.stroke();
+
+            ctx.restore();
+        }
 
     };
 
@@ -1490,7 +1651,7 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
                 <div ref={canvasWrapperRef} className="flex-1 flex items-center justify-center min-h-0 min-w-0 mx-4">
                     <div
                         ref={previewContainerRef}
-                        className={`relative shrink-0 overflow-hidden transition-all duration-300 ${mediaType === "image" && imageUrl
+                        className={`relative shrink-0 transition-all duration-300 ${imagePhoneActive ? 'overflow-visible' : 'overflow-hidden'} ${mediaType === "image" && imageUrl
                             ? ""
                             : "border border-white/20 rounded-xl"
                             }`}
@@ -1501,12 +1662,15 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
                                 : { width: '100%', height: 'auto', maxHeight: '100%' }
                             ),
                             containerType: 'size',
+
                         }}
                         onClick={(e) => {
                             if (
                                 !(e.target as HTMLElement).closest('[data-canvas-element]') &&
                                 !(e.target as HTMLElement).closest('[data-camera-overlay]') &&
-                                !(e.target as HTMLElement).closest('[data-video-container]')
+                                !(e.target as HTMLElement).closest('[data-video-container]') &&
+                                !(e.target as HTMLElement).closest('[data-phone-overlay]') &&
+                                !(e.target as HTMLElement).closest('[data-image-phone-overlay]')
                             ) {
                                 if (onElementSelect) onElementSelect(null);
                                 setIsVideoSelected(false);
@@ -1592,6 +1756,11 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
                                             padding: `${padding * 0.5}%`,
                                             zIndex: isVideoSelected ? 101 : 2,
                                             pointerEvents: 'none',
+                                            // Hide the video layer while a motion template is active;
+                                            // the video element stays in the DOM so playback/timing continues.
+                                            // In image mode, also hide when the phone overlay is active.
+                                            opacity: (mediaType === "video" ? motionActive : imagePhoneActive) ? 0 : 1,
+                                            transition: 'opacity 0.25s ease, padding 0.2s',
                                             ...(mediaType === "image" && imageTransform && !apply3DToBackground ? {
                                                 perspective: `${imageTransform.perspective || 600}px`,
                                                 perspectiveOrigin: 'center center',
@@ -1618,7 +1787,7 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
                                                 transition: (mediaType === "image" && imageTransform && !apply3DToBackground)
                                                     ? 'transform 300ms cubic-bezier(0.25, 0.46, 0.45, 0.94)'
                                                     : isDraggingVideo || isDraggingRotation ? 'none' : 'transform 0.15s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
-                                                pointerEvents: 'auto',
+                                                pointerEvents: motionActive ? 'none' : 'auto',
                                                 transformStyle: mediaType === "image" && !apply3DToBackground ? 'preserve-3d' : undefined,
                                             }}
                                             onMouseEnter={() => hasMedia && setIsVideoHovered(true)}
@@ -1675,7 +1844,7 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
                                                         </div>
                                                     </div>
                                                 )}
-                                                {(isVideoSelected || isVideoHovered) && hasMedia && !isDraggingRotation && (
+                                                {(isVideoSelected || isVideoHovered) && hasMedia && !isDraggingRotation && !(mediaType === "image" && imagePhoneActive) && (
                                                     <div
                                                         className={`absolute -inset-px border pointer-events-none z-10 opacity-80 ${isVideoSelected ? 'border-blue-500' : 'border-white'}`}
                                                         style={{ borderRadius: `${roundedCorners + 1}px` }}
@@ -1831,7 +2000,7 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
                                     setIsDraggingElement={setIsDraggingElement}
                                     setIsDraggingElementRotation={setIsDraggingElementRotation}
                                     elementDragStart={elementDragStart}
-                                    layerZIndex={100}
+                                    layerZIndex={200}
                                     hitTestOnly={true}
                                     elementCorners={elementCorners}
                                     setElementCorners={setElementCorners}
@@ -1843,6 +2012,127 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
                                         setEditingTextId(null);
                                     }}
                                 />
+
+                                {/* ── Motion 3D Phone Overlay — INSIDE zoom layer so fragment-zoom applies ── */}
+                                {motionActive && (
+                                    <div
+                                        ref={phoneOverlayRef}
+                                        data-phone-overlay
+                                        className="absolute inset-0 flex items-center justify-center overflow-hidden"
+                                        style={{ zIndex: 150, isolation: "isolate" }}
+                                    >
+                                        {/* Scale wrapper — controlled by Ctrl+scroll */}
+                                        <div
+                                            style={{
+                                                transform: `scale(${motionZoomScale})`,
+                                                transformOrigin: 'center center',
+                                                transition: 'transform 0.08s ease-out',
+                                                willChange: 'transform',
+                                            }}
+                                        >
+                                            <Phone3DViewer
+                                                videoElement={videoRef?.current ?? null}
+                                                canvasElement={exportCanvasRef.current}
+                                                imageUrl={motionImageUrl}
+                                                isPlaying={isPlaying}
+                                                animDuration={motionDuration}
+                                                intensity={motionIntensity}
+                                                templateId={selectedTemplateId}
+                                                motionStyle={motionStyle}
+                                                variantId={motionVariantId}
+                                                animMode={motionAnimMode}
+                                            />
+                                        </div>
+
+                                        {/* Zoom level badge — appears briefly after scrolling */}
+                                        <div
+                                            className="absolute bottom-3 left-1/2 -translate-x-1/2 pointer-events-none select-none"
+                                            style={{
+                                                opacity: motionZoomVisible ? 1 : 0,
+                                                transition: 'opacity 0.25s ease',
+                                                zIndex: 10,
+                                            }}
+                                        >
+                                            <div className="flex items-center gap-1.5 bg-black/70 backdrop-blur-sm text-white/90 text-[11px] font-medium px-2.5 py-1 rounded-full border border-white/10">
+                                                <Icon
+                                                    icon="lucide:search"
+                                                    className="opacity-70"
+                                                    style={{ width: '10px', height: '10px' }}
+                                                />
+                                                {Math.round(motionZoomScale * 100)}%
+                                            </div>
+                                        </div>
+
+                                        {/* Ctrl+scroll hint — shown when zoom is at 100% */}
+                                        {motionZoomScale === 1 && !motionZoomVisible && (
+                                            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 pointer-events-none select-none opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <div className="text-white/30 text-[10px] font-normal whitespace-nowrap">
+                                                    Ctrl + scroll para zoom
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* ── Image-mode phone overlay — inside zoom layer for correct z-index stacking ── */}
+                                {mediaType === "image" && imagePhoneActive && (
+                                    <div
+                                        className="absolute inset-0 pointer-events-none"
+                                        style={{ zIndex: 155 }}
+                                    >
+                                        <div
+                                            className="absolute"
+                                            data-image-phone-overlay
+                                            style={{
+                                                left: '50%',
+                                                top: '50%',
+                                                transform: `translate(calc(-50% + ${imagePhoneX}px), calc(-50% + ${imagePhoneY}px)) scale(${imagePhoneScale})`,
+                                                transformOrigin: 'center center',
+                                                pointerEvents: 'auto',
+                                                userSelect: 'none',
+                                            }}
+                                            onWheel={(e) => {
+                                                if (!e.ctrlKey) return;
+                                                e.preventDefault();
+                                                const next = Math.max(0.3, Math.min(3, imagePhoneScale * (e.deltaY < 0 ? 1.05 : 0.95)));
+                                                setImagePhoneScale(next);
+                                                setImagePhoneZoomVisible(true);
+                                                if (imagePhoneZoomTimerRef.current) clearTimeout(imagePhoneZoomTimerRef.current);
+                                                imagePhoneZoomTimerRef.current = setTimeout(() => setImagePhoneZoomVisible(false), 1200);
+                                            }}
+                                        >
+                                            <Phone3DViewer
+                                                key={`${imagePhoneDevice}-${imagePhonePresetId}`}
+                                                imageUrl={imageUrl}
+                                                isPlaying={false}
+                                                animDuration={0}
+                                                intensity={0}
+                                                templateId="phone"
+                                                motionStyle="normal"
+                                                animMode="static"
+                                                keepRotation={true}
+                                                initialRotationX={imagePhoneRotX}
+                                                initialRotationY={imagePhoneRotY}
+                                                modelUrl={imagePhoneModelUrl}
+                                                onRotationChange={(rx, ry) => {
+                                                    setImagePhoneRotX(rx);
+                                                    setImagePhoneRotY(ry);
+                                                }}
+                                                onMount={(canvas) => { imagePhoneCanvasRef.current = canvas; }}
+                                            />
+                                        </div>
+
+                                        {/* Zoom badge */}
+                                        {imagePhoneZoomVisible && (
+                                            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 pointer-events-none select-none" style={{ zIndex: 10 }}>
+                                                <div className="flex items-center gap-1.5 bg-black/70 backdrop-blur-sm text-white/90 text-[11px] font-medium px-2.5 py-1 rounded-full border border-white/10">
+                                                    <Icon icon="lucide:search" className="opacity-70" style={{ width: '10px', height: '10px' }} />
+                                                    {Math.round(imagePhoneScale * 100)}%
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
 
                             </div>
                             {/* End perspective wrapper div */}
@@ -1996,10 +2286,10 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
                                     }}
                                 />
                             )}
+
                         </div>
                     </div>
                 </div>
-
                 {/* ── Layers panel — pegado al lado derecho del canvas ── */}
                 <div className="flex-shrink-0 self-stretch flex items-stretch z-10">
                     <LayersPanel

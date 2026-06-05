@@ -447,7 +447,7 @@ export function LayersPanel({
                     }}
                     data-layer-row="video-layer"
                     className={[
-                        "group relative flex items-center gap-1.5 h-7 px-2 rounded-md cursor-pointer select-none transition-all duration-100",
+                        "group relative flex items-center gap-1.5  h-7 px-2 rounded-md cursor-pointer select-none transition-all duration-100",
                         isSelected
                             ? "bg-[#00A3FF]/15 text-white"
                             : "text-neutral-400 hover:bg-white/5 hover:text-neutral-200",

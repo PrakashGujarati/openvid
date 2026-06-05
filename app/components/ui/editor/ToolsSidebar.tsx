@@ -261,6 +261,18 @@ export function ToolsSidebar({
                         }}
                     />
 
+                    <SidebarTool
+                        icon="mage:box-3d"
+                        label={t("tools.motion")}
+                        isActive={activeTool === "motion"}
+                        onClick={() => onToolChange("motion")}
+                        popover={{
+                            title: t("popovers.motion.title"),
+                            description: t("popovers.motion.description"),
+                            videoSrc: "/videos/preview-motion.mp4"
+                        }}
+                    />
+
                     {/* Video-specific tools - hidden in photo mode */}
                     {!isPhotoMode && (
                         <SidebarTool

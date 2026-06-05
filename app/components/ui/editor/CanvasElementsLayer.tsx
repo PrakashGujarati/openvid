@@ -7,7 +7,7 @@ import { useRef, useState, useEffect, useCallback } from "react";
 function InlineTextEditor({
     element,
     refSize,
-    onEnd,
+    onEnd
 }: {
     element: TextElement;
     refSize: number;

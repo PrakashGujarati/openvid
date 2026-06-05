@@ -40,6 +40,8 @@ const MockupMenu = lazy(() => import("./MockupMenu").then(mod => ({ default: mod
 const AudioMenu = lazy(() => import("./AudioMenu").then(mod => ({ default: mod.AudioMenu })));
 const VideosMenu = lazy(() => import("./VideosMenu").then(mod => ({ default: mod.VideosMenu })));
 const HistoryMenu = lazy(() => import("./HistoryMenu").then(mod => ({ default: mod.HistoryMenu })));
+const MotionMenu = lazy(() => import("./MotionMenu").then(mod => ({ default: mod.MotionMenu })));
+const ImageMotionMenu = lazy(() => import("./ImageMotionMenu").then(mod => ({ default: mod.ImageMotionMenu })));
 
 interface ExtendedControlPanelProps extends ControlPanelProps {
     onTogglePanel?: () => void;
@@ -128,6 +130,7 @@ export function ControlPanel({
     onAddImageToCanvas,
     onDeleteImageProject,
     onUploadImageToHistory,
+    mediaType = "video",
 }: ExtendedControlPanelProps) {
 
     const t = useTranslations("controlPanel");
@@ -276,6 +279,12 @@ export function ControlPanel({
                 {activeTool === "mockup" && (
                     <Suspense fallback={<MockupMenuSkeleton />}>
                         <MockupMenu mockupId={mockupId} mockupConfig={mockupConfig} onMockupChange={onMockupChange} onMockupConfigChange={onMockupConfigChange} />
+                    </Suspense>
+                )}
+
+                {activeTool === "motion" && (
+                    <Suspense fallback={<MockupMenuSkeleton />}>
+                        {mediaType === "image" ? <ImageMotionMenu /> : <MotionMenu />}
                     </Suspense>
                 )}
 

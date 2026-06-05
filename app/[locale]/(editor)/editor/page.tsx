@@ -39,7 +39,9 @@ import { findValidFragmentPosition } from "@/app/components/ui/editor/ZoomFragme
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { TimelineSkeleton } from "@/app/components/ui/Skeleton";
 import { AudioTrimModal } from "@/app/components/ui/editor/AudioTrimModal";
+import { useAuth } from "@/hooks/useAuth";
 import { VIDEO_Z_INDEX } from "@/lib/constants";
+import { getWallpaperUrl } from "@/lib/wallpaper.utils";
 import Image from "next/image";
 import Link from "next/link";
 import { TooltipAction } from "@/components/ui/tooltip-action";
@@ -54,6 +56,9 @@ const PhotoEditorPlaceholder = lazy(() => import("@/app/components/ui/editor/Pho
 export default function Editor() {
     // Editor mode (video/photo) from URL params
     const { mode: editorMode, isVideoMode, isPhotoMode } = useEditorMode();
+
+    // Auth — needed for building production-ready Recipe JSON
+    const { user } = useAuth();
 
     // Undo/Redo system - centralized state management
     const {
@@ -1345,6 +1350,85 @@ export default function Editor() {
     const [videoBlob, setVideoBlob] = useState<Blob | null>(null);
 
     const handleExport = (quality: ExportQuality) => {
+        // ── BACKEND TESTING: imprime el Recipe JSON completo en la consola ──
+        // Para probar el backend: copia este JSON, reemplaza los campos
+        // "storageKey" con el path real del video subido a Supabase Storage:
+        //   "source-videos/{tu-user-id}/{libraryVideoId}.mp4"
+        console.log("=== RECIPE JSON PARA BACKEND (PRUEBAS) ===");
+        const userId = user?.id ?? "USER-ID-NO-DISPONIBLE";
+        const appOrigin = window.location.origin;
+        console.log(JSON.stringify({
+            quality,
+            trim: trimRange.end > trimRange.start
+                ? { start: trimRange.start, end: trimRange.end }
+                : null,
+            clips: videoClips.map(clip => ({
+                id: clip.id,
+                libraryVideoId: clip.libraryVideoId,
+                storageKey: `source-videos/${userId}/${clip.libraryVideoId}.mp4`,
+                name: clip.name,
+                startTime: clip.startTime,
+                trimStart: clip.trimStart,
+                trimEnd: clip.trimEnd,
+                duration: clip.trimEnd - clip.trimStart,
+                hasAudio: clipAudioStateRef.current.get(clip.libraryVideoId) !== false,
+                hasCamera: clip.hasCamera ?? false,
+            })),
+            muteOriginalAudio,
+            masterVolume,
+            videoHasAudioTrack,
+            audioTracks: audioTracks.map(track => {
+                const audio = uploadedAudios.find(a => a.id === track.audioId);
+                return {
+                    audioId: track.audioId,
+                    audioStorageKey: `source-audios/${userId}/${track.audioId}`,
+                    name: audio?.name ?? track.name,
+                    startTime: track.startTime,
+                    duration: track.duration,
+                    trimStart: track.trimStart ?? 0,
+                    volume: track.volume,
+                    loop: track.loop,
+                };
+            }),
+            backgroundTab,
+            selectedWallpaper,
+            // URL completa del wallpaper seleccionado (vacío si no se usa wallpaper)
+            wallpaperUrl: backgroundTab === "wallpaper" && selectedWallpaper >= 0
+                ? `${appOrigin}${getWallpaperUrl(selectedWallpaper)}`
+                : null,
+            backgroundBlur,
+            // dataUrl si el usuario subió imagen propia | URL https si es Unsplash/Pexels | "" si no hay
+            selectedImageUrl,
+            backgroundColorConfig,
+            aspectRatio,
+            customDimensions,
+            // Native video dimensions — used by the backend to compute output size when aspectRatio is 'auto'
+            sourceDimensions: videoDimensions ?? null,
+            cropArea,
+            padding,
+            roundedCorners,
+            shadows,
+            videoTransform,
+            mockupId,
+            mockupConfig,
+            zoomFragments,
+            canvasElements: canvasElements.map(el => {
+                // Resolver imagePath de elementos built-in a URLs completas
+                if (el.type === "image") {
+                    const imgEl = el as import("@/types/canvas-elements.types").ImageElement;
+                    if (imgEl.imagePath?.startsWith("/")) {
+                        return { ...el, imagePath: `${appOrigin}${imgEl.imagePath}` };
+                    }
+                }
+                return el;
+            }),
+            cameraConfig,
+            cameraStorageKey: null,
+            videoMaskConfig,
+        }, null, 2));
+        console.log("==========================================");
+        // ── FIN BACKEND TESTING ──
+
         isExportingRef.current = true;
         for (const audioEl of audioElementsRef.current.values()) {
             audioEl.pause();
@@ -2797,6 +2881,7 @@ export default function Editor() {
                                         onDeleteImageProject={handleDeleteImageProject}
                                         onUploadImageToHistory={handleUploadImageToHistory}
                                         elementsTextTabTrigger={elementsTextTabTrigger}
+                                        mediaType={isPhotoMode ? "image" : "video"}
                                     />
                                 </Suspense>
                             </motion.div>
@@ -2830,6 +2915,8 @@ export default function Editor() {
                     </AnimatePresence>
 
                     <VideoCanvas
+                        activeTool={activeTool}
+                        isPlaying={isPlaying}
                         layersPanelToolbar={
                             <EditorTopBar
                                 onExport={handleExport}
