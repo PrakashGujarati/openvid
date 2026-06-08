@@ -44,3 +44,22 @@ export interface MotionTemplate {
 export interface EditorPanelProps {
   template: MotionTemplate;
 }
+
+export interface CameraVariant {
+  id: string;
+  label: string;
+  description: string;
+  icon: string;
+  /** Suggested default animMode for this variant */
+  defaultAnimMode: AnimMode;
+  /** Duration in ms for the entry animation */
+  entryDuration: number;
+  /** Duration in ms for the exit animation */
+  exitDuration: number;
+  /** Entry: dramatic pose → REST (NRX/NRY). Must end at REST. */
+  entryScript: ScriptFn;
+  /** Exit: REST (NRX/NRY) → dramatic pose. */
+  exitScript: ScriptFn;
+  /** Kept for backwards compat with one-shot preview */
+  script: ScriptFn;
+}

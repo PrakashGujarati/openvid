@@ -41,6 +41,20 @@ export interface ImageProject {
     apply3DToBackground: boolean;
     imageMaskConfig: ImageMaskConfig;
 
+    // ── Motion / 3D device mockup state (image mode) ──────────────────────
+    imagePhoneActive: boolean;
+    imagePhoneX: number;
+    imagePhoneY: number;
+    imagePhoneScale: number;
+    imagePhoneRotX: number;
+    imagePhoneRotY: number;
+    imagePhoneRotZ: number;
+    imagePhonePerspective: number;
+    imagePhoneDevice: 'phone' | 'iphone' | 'iphone-13-pro-max' | 'samsung' | 'laptop';
+    imagePhoneOpening: number;
+    imagePhoneShadow: number;
+    imagePhoneShadowColor: string;
+
     createdAt: number;
 }
 

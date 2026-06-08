@@ -1,0 +1,210 @@
+/**
+ * Phone3DViewer — pure helpers and constants
+ *
+ * Extracted from Phone3DViewer.tsx to keep the main component file focused
+ * on React state, refs, and the render loop. Everything here is a pure
+ * function or a module-level constant that doesn't depend on React.
+ */
+import * as THREE from "three";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+
+// ─── Canvas dimensions ────────────────────────────────────────────────────────
+// Based on phone-gltf.glb model dimensions:
+// Model aspect ratio (width/height): 0.479
+// Screen aspect ratio (width/height): 0.459
+export const PHONE_H = 704;
+export const PHONE_W = Math.round(PHONE_H * 0.479); // matches model aspect ratio
+
+// Render at 4x resolution for better quality (antialiasing) AND to provide
+// enough buffer space for rotations and scaling without clipping.
+export const RENDER_MULTIPLIER = 4; // Important: quality
+export const RENDER_W = PHONE_W * RENDER_MULTIPLIER;
+export const RENDER_H = PHONE_H * RENDER_MULTIPLIER;
+
+// Camera settings (based on appscreen-main reference: fov=20, position=[-3,-1,4])
+export const CAM_FOV = 20;
+export const CAM_Z = 6; // Closer to model (reference uses position.z = 4)
+
+// ─── Device configs ───────────────────────────────────────────────────────────
+// For iPhone/Samsung the GLB doesn't expose a usable screen UV, so we add a
+// custom PlaneGeometry on top of the glass with the correct aspect ratio.
+export type DeviceKey = "iphone" | "samsung" | "phone";
+
+export interface DeviceConfig {
+  modelUrl: string | null;
+  aspectRatio: number;
+  screenHeightFactor: number;
+  screenOffset: { x: number; y: number; z: number };
+  cornerRadiusFactor: number;
+}
+
+export const deviceConfigs: Record<DeviceKey, DeviceConfig> = {
+  iphone: {
+    modelUrl: "/models/iphone-15-pro-max.glb",
+    aspectRatio: 1290 / 2796,
+    screenHeightFactor: 0.826,
+    screenOffset: { x: 0.027, y: 0.745, z: 0.098 },
+    cornerRadiusFactor: 0.16,
+  },
+  samsung: {
+    modelUrl: "/models/samsung-galaxy-s25-ultra.glb",
+    aspectRatio: 1440 / 3120,
+    screenHeightFactor: 0.66,
+    screenOffset: { x: 0, y: 0.0, z: 0.08 },
+    cornerRadiusFactor: 0.04,
+  },
+  phone: {
+    modelUrl: "/models/phone-gltf.glb", // previously loaded from JSON, now a real GLB
+    aspectRatio: 0,                     // uses model's built-in screen mesh UV
+    screenHeightFactor: 0,
+    screenOffset: { x: 0, y: 0, z: 0 },
+    cornerRadiusFactor: 0,
+  },
+};
+
+export function getDeviceFromModelUrl(modelUrl: string | undefined): DeviceKey {
+  if (!modelUrl) return "phone";
+  if (modelUrl.includes("iphone")) return "iphone";
+  if (modelUrl.includes("samsung")) return "samsung";
+  return "phone";
+}
+
+// ─── Screen canvas helper ────────────────────────────────────────────────────
+export interface ImageMaskConfigLike {
+  enabled?: boolean;
+  top?: { from: number; to?: number };
+  right?: { from: number; to?: number };
+  bottom?: { from: number; to?: number };
+  left?: { from: number; to?: number };
+  angle?: number;
+  angleFrom?: number;
+  angleTo?: number;
+}
+
+export function createCoverScreenCanvas(
+  source: HTMLImageElement | HTMLVideoElement | HTMLCanvasElement,
+  targetW: number,
+  targetH: number,
+  cornerRadius: number,
+  maskConfig?: ImageMaskConfigLike | null
+): HTMLCanvasElement {
+  let srcW: number, srcH: number;
+  if (source instanceof HTMLImageElement) {
+    srcW = source.naturalWidth  || source.width  || 1;
+    srcH = source.naturalHeight || source.height || 1;
+  } else if (source instanceof HTMLVideoElement) {
+    srcW = source.videoWidth  || 1;
+    srcH = source.videoHeight || 1;
+  } else {
+    srcW = source.width  || 1;
+    srcH = source.height || 1;
+  }
+
+  const scale = Math.max(targetW / srcW, targetH / srcH);
+  const drawW = srcW * scale;
+  const drawH = srcH * scale;
+  const offsetX = (targetW - drawW) / 2;
+  const offsetY = (targetH - drawH) / 2;
+
+  const canvas = document.createElement("canvas");
+  canvas.width  = targetW;
+  canvas.height = targetH;
+  const ctx = canvas.getContext("2d")!;
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+
+  const r = Math.min(cornerRadius, Math.min(targetW, targetH) / 2);
+  ctx.beginPath();
+  ctx.moveTo(r, 0);
+  ctx.lineTo(targetW - r, 0);
+  ctx.quadraticCurveTo(targetW, 0, targetW, r);
+  ctx.lineTo(targetW, targetH - r);
+  ctx.quadraticCurveTo(targetW, targetH, targetW - r, targetH);
+  ctx.lineTo(r, targetH);
+  ctx.quadraticCurveTo(0, targetH, 0, targetH - r);
+  ctx.lineTo(0, r);
+  ctx.quadraticCurveTo(0, 0, r, 0);
+  ctx.closePath();
+  ctx.clip();
+
+  ctx.drawImage(source, offsetX, offsetY, drawW, drawH);
+
+  if (maskConfig?.enabled) {
+    const drawGradient = (cssAngleDeg: number, from: number, to: number) => {
+      const a = (cssAngleDeg * Math.PI) / 180;
+      const cx = targetW / 2;
+      const cy = targetH / 2;
+      const diag = Math.sqrt(targetW * targetW + targetH * targetH);
+      const dx = Math.sin(a) * diag;
+      const dy = -Math.cos(a) * diag;
+      const g = ctx.createLinearGradient(cx - dx / 2, cy - dy / 2, cx + dx / 2, cy + dy / 2);
+      g.addColorStop(0, "rgba(0,0,0,1)");
+      g.addColorStop(Math.max(0, Math.min(1, from / 100)), "rgba(0,0,0,1)");
+      g.addColorStop(Math.max(0, Math.min(1, (to ?? 100) / 100)), "rgba(0,0,0,0)");
+      ctx.globalCompositeOperation = "destination-out";
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, targetW, targetH);
+      ctx.globalCompositeOperation = "source-over";
+    };
+    if (maskConfig.top)    drawGradient(180, maskConfig.top.from, maskConfig.top.to ?? 100);
+    if (maskConfig.bottom) drawGradient(0,   maskConfig.bottom.from, maskConfig.bottom.to ?? 100);
+    if (maskConfig.left)   drawGradient(90,  maskConfig.left.from, maskConfig.left.to ?? 100);
+    if (maskConfig.right)  drawGradient(270, maskConfig.right.from, maskConfig.right.to ?? 100);
+    if (maskConfig.angle !== undefined) {
+      drawGradient(maskConfig.angle, maskConfig.angleFrom ?? 0, maskConfig.angleTo ?? 100);
+    }
+  }
+  return canvas;
+}
+
+// ─── GLTF URL cache ───────────────────────────────────────────────────────────
+// All models (including the default phone) are now loaded as GLB files via URL.
+// The old loadGltfGroup() / GLTFLoader.parse() path is gone; everything goes
+// through loadGltfFromUrl() which caches by URL so each file is fetched once.
+const gltfUrlCache = new Map<string, Promise<THREE.Group>>();
+
+export function loadGltfFromUrl(url: string): Promise<THREE.Group> {
+  if (!gltfUrlCache.has(url)) {
+    gltfUrlCache.set(
+      url,
+      new Promise<THREE.Group>((resolve, reject) =>
+        new GLTFLoader().load(
+          url,
+          (gltf) => resolve(gltf.scene as THREE.Group),
+          undefined,
+          reject
+        )
+      )
+    );
+  }
+  return gltfUrlCache.get(url)!;
+}
+
+/**
+ * Convenience alias kept for callers that previously used loadGltfGroup().
+ * Now simply delegates to loadGltfFromUrl with the default phone GLB path.
+ */
+export function loadGltfGroup(): Promise<THREE.Group> {
+  return loadGltfFromUrl("/models/phone-gltf.glb");
+}
+
+export function cloneGroup(src: THREE.Group): THREE.Group {
+  const cloned = src.clone(true);
+  cloned.traverse((obj) => {
+    if (obj instanceof THREE.Mesh) {
+      const orig = obj.material as THREE.Material | THREE.Material[];
+      if (Array.isArray(orig)) {
+        obj.material = orig.map((m) => m.clone());
+      } else {
+        obj.material = orig.clone();
+      }
+    }
+  });
+  return cloned;
+}
+
+// ─── Math helpers ────────────────────────────────────────────────────────────
+/** Shortest arc in degrees from curRy to targetRy, result in [-180, 180] */
+export function shortArc(curRy: number, targetRy: number): number {
+  return ((targetRy - curRy) % 360 + 540) % 360 - 180;
+}

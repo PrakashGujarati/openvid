@@ -18,11 +18,11 @@ export interface PhoneRotationOffset {
 
 export const PREVIEW_TO_PHONE_OFFSET: Record<string, PhoneRotationOffset> = {
   "front":              { rx: 0,    ry: 0    },
-  "top-left-angle":     { rx: 15,   ry: -25  },
-  "top-right-angle":    { rx: 15,   ry: 22   },
-  "bottom-left-angle":  { rx: -15,  ry: -25  },
-  "bottom-right-angle": { rx: -15,  ry: 22   },
-  "isometric":          { rx: 25,   ry: 45   },
+  "top-left-angle":     { rx: 15,   ry: 25   },
+  "top-right-angle":    { rx: 15,   ry: -22  },
+  "bottom-left-angle":  { rx: -15,  ry: 25   },
+  "bottom-right-angle": { rx: -15,  ry: -22  },
+  "isometric":          { rx: 25,   ry: -45  },
   "tilt-up":            { rx: 15,   ry: 0    },
   "tilt-down":          { rx: -15,  ry: 0    },
 };

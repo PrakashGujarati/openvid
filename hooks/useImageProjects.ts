@@ -41,6 +41,19 @@ interface ImageProjectState {
     imagePreview3D: Preview3DConfig;
     apply3DToBackground: boolean;
     imageMaskConfig: ImageMaskConfig;
+    // ── Motion / 3D device mockup state (image mode) ──────────────────────
+    imagePhoneActive: boolean;
+    imagePhoneX: number;
+    imagePhoneY: number;
+    imagePhoneScale: number;
+    imagePhoneRotX: number;
+    imagePhoneRotY: number;
+    imagePhoneRotZ: number;
+    imagePhonePerspective: number;
+    imagePhoneDevice: 'phone' | 'iphone' | 'iphone-13-pro-max' | 'samsung' | 'laptop';
+    imagePhoneOpening: number;
+    imagePhoneShadow: number;
+    imagePhoneShadowColor: string;
 }
 
 const DEFAULT_PROJECT_STATE: ImageProjectState = {
@@ -66,6 +79,19 @@ const DEFAULT_PROJECT_STATE: ImageProjectState = {
     imagePreview3D: PREVIEW_CONFIGS[0],
     apply3DToBackground: false,
     imageMaskConfig: DEFAULT_MASK_CONFIG,
+    // ── Motion / 3D device mockup state defaults (match MotionContext) ───
+    imagePhoneActive: false,
+    imagePhoneX: 0,
+    imagePhoneY: 0,
+    imagePhoneScale: 1,
+    imagePhoneRotX: 0,
+    imagePhoneRotY: 0,
+    imagePhoneRotZ: 0,
+    imagePhonePerspective: 600,
+    imagePhoneDevice: 'phone',
+    imagePhoneOpening: 1,
+    imagePhoneShadow: 0.6,
+    imagePhoneShadowColor: "#000000",
 };
 
 export function useImageProjects() {
