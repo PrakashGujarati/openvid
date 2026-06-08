@@ -208,3 +208,11 @@ export function cloneGroup(src: THREE.Group): THREE.Group {
 export function shortArc(curRy: number, targetRy: number): number {
   return ((targetRy - curRy) % 360 + 540) % 360 - 180;
 }
+
+export function parseShadowColor(hex: string, opacity: number): string {
+  const h = hex.replace("#", "");
+  const r = parseInt(h.length === 3 ? h[0] + h[0] : h.slice(0, 2), 16);
+  const g = parseInt(h.length === 3 ? h[1] + h[1] : h.slice(2, 4), 16);
+  const b = parseInt(h.length === 3 ? h[2] + h[2] : h.slice(4, 6), 16);
+  return `rgba(${r},${g},${b},${opacity.toFixed(3)})`;
+}

@@ -20,6 +20,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import {
   createCoverScreenCanvas,
+  parseShadowColor,
   type ImageMaskConfigLike,
 } from "@/lib/phone3d.utils";
 
@@ -92,15 +93,6 @@ function rxRyFromCamera(camPos: THREE.Vector3): { rx: number; ry: number } {
   const rx = (Math.PI / 2 - sph.phi) * (180 / Math.PI);
   const ry = sph.theta * (180 / Math.PI);
   return { rx, ry };
-}
-
-// ─── Shadow color helper ──────────────────────────────────────────────────────
-function parseShadowColor(hex: string, opacity: number): string {
-  const h = hex.replace("#", "");
-  const r = parseInt(h.length === 3 ? h[0] + h[0] : h.slice(0, 2), 16);
-  const g = parseInt(h.length === 3 ? h[1] + h[1] : h.slice(2, 4), 16);
-  const b = parseInt(h.length === 3 ? h[2] + h[2] : h.slice(4, 6), 16);
-  return `rgba(${r},${g},${b},${opacity.toFixed(3)})`;
 }
 
 export function Laptop3DViewer({

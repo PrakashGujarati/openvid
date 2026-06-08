@@ -38,6 +38,7 @@ import {
   loadGltfGroup,
   cloneGroup,
   type ImageMaskConfigLike,
+  parseShadowColor,
 } from "@/lib/phone3d.utils";
 
 export interface Phone3DApi {
@@ -61,14 +62,6 @@ interface Props {
 }
 
 const DEFAULT_CAM_Z = 1.5;
-
-function parseShadowColor(hex: string, opacity: number): string {
-  const h = hex.replace("#", "");
-  const r = parseInt(h.length === 3 ? h[0] + h[0] : h.slice(0, 2), 16);
-  const g = parseInt(h.length === 3 ? h[1] + h[1] : h.slice(2, 4), 16);
-  const b = parseInt(h.length === 3 ? h[2] + h[2] : h.slice(4, 6), 16);
-  return `rgba(${r},${g},${b},${opacity.toFixed(3)})`;
-}
 
 function SharedLights() {
   return (
@@ -99,6 +92,7 @@ interface SceneProps {
   onRotationChange?: (rx: number, ry: number) => void;
   onApi?: (api: Phone3DApi | null) => void;
   modelUrl?: string;
+  onLoaded?: () => void;
 }
 
 // ─── GltfModelScene — iphone 15 / samsung / iphone-13 ────────────────────────
@@ -112,6 +106,7 @@ function GltfModelScene({
   onRotationChange,
   onApi,
   modelUrl,
+  onLoaded,
 }: SceneProps) {
   const rootRef = useRef<THREE.Group>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -135,24 +130,37 @@ function GltfModelScene({
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.onload = () => {
-      const TARGET_W = 2048;
-      const TARGET_H = Math.round(TARGET_W / deviceConfig.aspectRatio);
-      const cornerRadius = Math.round(TARGET_W * deviceConfig.cornerRadiusFactor);
-      const cover = createCoverScreenCanvas(img, TARGET_W, TARGET_H, cornerRadius, imageMaskConfigRef.current);
-      if (mat.map) { mat.map.dispose(); mat.map = null; }
-      const tex = new THREE.CanvasTexture(cover);
-      tex.flipY = true;
-      tex.colorSpace = THREE.SRGBColorSpace;
-      tex.generateMipmaps = true;
-      tex.minFilter = THREE.LinearMipmapLinearFilter;
-      tex.magFilter = THREE.LinearFilter;
-      tex.wrapS = THREE.ClampToEdgeWrapping;
-      tex.wrapT = THREE.ClampToEdgeWrapping;
-      tex.anisotropy = gl.capabilities.getMaxAnisotropy();
-      mat.map = tex;
-      mat.color.set(0xffffff);
-      mat.needsUpdate = true;
-      lastLoadedUrlRef.current = url;
+      // requestAnimationFrame difiere la creación del CanvasTexture
+      // al próximo frame para no bloquear el render actual ni
+      // forzar una subida síncrona de píxeles a la GPU.
+      requestAnimationFrame(() => {
+        const TARGET_W = 2048;
+        const TARGET_H = Math.round(TARGET_W / deviceConfig.aspectRatio);
+        const cornerRadius = Math.round(TARGET_W * deviceConfig.cornerRadiusFactor);
+        const cover = createCoverScreenCanvas(img, TARGET_W, TARGET_H, cornerRadius, imageMaskConfigRef.current);
+        if (mat.map) { mat.map.dispose(); mat.map = null; }
+        const tex = new THREE.CanvasTexture(cover);
+        tex.flipY = true;
+        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.generateMipmaps = true;
+        tex.minFilter = THREE.LinearMipmapLinearFilter;
+        tex.magFilter = THREE.LinearFilter;
+        tex.wrapS = THREE.ClampToEdgeWrapping;
+        tex.wrapT = THREE.ClampToEdgeWrapping;
+        tex.anisotropy = gl.capabilities.getMaxAnisotropy();
+        mat.map = tex;
+        mat.color.set(0xffffff);
+        mat.needsUpdate = true;
+        lastLoadedUrlRef.current = url;
+      });
+    };
+    img.onerror = () => {
+      // Imagen inválida: libera cualquier textura previa y deja el
+      // material con su color base (gris oscuro) en lugar del quad
+      // blanco del navegador.
+      if (mat.map) { mat.map.dispose(); mat.map = null; mat.needsUpdate = true; }
+      mat.color.set(0x111111);
+      lastLoadedUrlRef.current = url; // evita reintento
     };
     img.src = url;
   }, [deviceConfig, gl]);
@@ -192,6 +200,8 @@ function GltfModelScene({
     if (imageUrlRef.current) {
       applyTexture(mat, imageUrlRef.current);
     }
+
+    onLoaded?.();
 
     // Microtask: OrbitControls is guaranteed mounted by R3F before this runs
     Promise.resolve().then(() => {
@@ -292,6 +302,7 @@ function DefaultPhoneModelScene({
   zoom,
   onRotationChange,
   onApi,
+  onLoaded,
 }: Omit<SceneProps, "modelUrl">) {
   const rootRef = useRef<THREE.Group>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -315,20 +326,29 @@ function DefaultPhoneModelScene({
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.onload = () => {
-      const cover = createCoverScreenCanvas(img, TARGET_W, TARGET_H, 0, imageMaskConfigRef.current);
-      if (mat.map) { mat.map.dispose(); mat.map = null; }
-      const tex = new THREE.CanvasTexture(cover);
-      tex.flipY = false;
-      tex.colorSpace = THREE.SRGBColorSpace;
-      tex.generateMipmaps = true;
-      tex.minFilter = THREE.LinearMipmapLinearFilter;
-      tex.magFilter = THREE.LinearFilter;
-      tex.wrapS = THREE.ClampToEdgeWrapping;
-      tex.wrapT = THREE.ClampToEdgeWrapping;
-      tex.anisotropy = gl.capabilities.getMaxAnisotropy();
-      mat.map = tex;
-      mat.color.set(0xffffff);
-      mat.needsUpdate = true;
+      // requestAnimationFrame difiere la creación del CanvasTexture
+      // al próximo frame para no saturar la GPU.
+      requestAnimationFrame(() => {
+        const cover = createCoverScreenCanvas(img, TARGET_W, TARGET_H, 0, imageMaskConfigRef.current);
+        if (mat.map) { mat.map.dispose(); mat.map = null; }
+        const tex = new THREE.CanvasTexture(cover);
+        tex.flipY = false;
+        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.generateMipmaps = true;
+        tex.minFilter = THREE.LinearMipmapLinearFilter;
+        tex.magFilter = THREE.LinearFilter;
+        tex.wrapS = THREE.ClampToEdgeWrapping;
+        tex.wrapT = THREE.ClampToEdgeWrapping;
+        tex.anisotropy = gl.capabilities.getMaxAnisotropy();
+        mat.map = tex;
+        mat.color.set(0xffffff);
+        mat.needsUpdate = true;
+        lastLoadedUrlRef.current = url;
+      });
+    };
+    img.onerror = () => {
+      if (mat.map) { mat.map.dispose(); mat.map = null; mat.needsUpdate = true; }
+      mat.color.set(0x111111);
       lastLoadedUrlRef.current = url;
     };
     img.src = url;
@@ -381,6 +401,8 @@ function DefaultPhoneModelScene({
       if (imageUrlRef.current && screenMatRef.current) {
         applyTexture(screenMatRef.current, imageUrlRef.current);
       }
+
+      onLoaded?.();
 
       Promise.resolve().then(() => {
         const orbit = orbitRef.current;
@@ -519,7 +541,7 @@ export function Phone3DViewer({
         transform: `scale(${scale})`,
         width: PHONE_W,
         height: PHONE_H + (hasShadow ? computedBlur * 0.8 : 0),
-        marginTop: "150px",
+        marginTop: "220px",
         marginLeft: "150px"
       }}
     >
@@ -561,38 +583,80 @@ export function Phone3DViewer({
           onPointerUp={() => setGrabbing(false)}
           onPointerLeave={() => setGrabbing(false)}
         >
-          <Canvas
+          <CanvasWithLoader
             key={modelUrl ?? "default"}
-            // ← Tamaño explícito: evita que R3F lea dimensiones del div con inset negativo
-            style={{
-              width: "100%",
-              height: "100%",
-              overflow: "visible",
-              display: "block",        // ← elimina el inline-block gap
-            }}
-            gl={{
-              antialias: true,
-              alpha: true,
-              preserveDrawingBuffer: true,
-              powerPreference: "high-performance",
-            }}
-            dpr={4}
-            onCreated={({ gl, scene: s }) => {
-              gl.outputColorSpace = THREE.SRGBColorSpace;
-              gl.toneMapping = THREE.NeutralToneMapping;
-              gl.toneMappingExposure = 1.0;
-              s.environmentIntensity = 1.6;
-              onMount?.(gl.domElement);
-            }}
-          >
-            {isDefaultPhone
-              ? <DefaultPhoneModelScene {...sceneProps} />
-              : <GltfModelScene        {...sceneProps} />
-            }
-          </Canvas>
+            isDefaultPhone={isDefaultPhone}
+            sceneProps={sceneProps}
+            onMount={onMount}
+          />
         </div>
-
       </div>
     </div>
+  );
+}
+
+// ─── CanvasWithLoader ────────────────────────────────────────────────────────
+// Each instance owns its own `loaded` state. Remounting via `key` is the
+// idiomatic React way to reset state when modelUrl changes — no
+// cascading setState in useEffect.
+function CanvasWithLoader({
+  isDefaultPhone,
+  sceneProps,
+  onMount,
+}: {
+  isDefaultPhone: boolean;
+  sceneProps: SceneProps;
+  onMount?: (canvas: HTMLCanvasElement) => void;
+}) {
+  const [loaded, setLoaded] = useState(false);
+
+    return (
+    <>
+      <Canvas
+        style={{
+          width: "100%",
+          height: "100%",
+          overflow: "visible",
+          display: "block",
+        }}
+        gl={{
+          antialias: true,
+          alpha: true,
+          preserveDrawingBuffer: true,
+          powerPreference: "high-performance",
+          // Permite software rendering si la GPU no soporta WebGL2 —
+          // reduce probabilidad de "Context Lost" en hardware limitado.
+          failIfMajorPerformanceCaveat: false,
+        }}
+        // dpr=2: balance entre nitidez y consumo de VRAM. dpr=4
+        // saturaba la GPU junto con los GLB pesados (iPhone 15, S25)
+        // y causaba "WebGLRenderer: Context Lost".
+        dpr={2}
+        onCreated={({ gl, scene: s }) => {
+          gl.outputColorSpace = THREE.SRGBColorSpace;
+          gl.toneMapping = THREE.NeutralToneMapping;
+          gl.toneMappingExposure = 1.0;
+          s.environmentIntensity = 1.6;
+          onMount?.(gl.domElement);
+        }}
+      >
+        {isDefaultPhone
+          ? <DefaultPhoneModelScene {...sceneProps} onLoaded={() => setLoaded(true)} />
+          : <GltfModelScene        {...sceneProps} onLoaded={() => setLoaded(true)} />
+        }
+      </Canvas>
+
+      {/* Loader — covers the white screen plane while the GLB
+          and the user's image texture are loading on first mount.
+          Removed automatically via key remount on device switch. */}
+      {!loaded && (
+        <div
+          className="absolute inset-0 flex items-center justify-center pointer-events-none"
+          style={{ zIndex: 4 }}
+        >
+          <div className="w-6 h-6 border-2 border-white/20 border-t-white/60 rounded-full animate-spin" />
+        </div>
+      )}
+    </>
   );
 }

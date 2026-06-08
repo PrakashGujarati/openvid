@@ -20,6 +20,7 @@ import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import {
     createCoverScreenCanvas,
+    parseShadowColor,
     type ImageMaskConfigLike,
 } from "@/lib/phone3d.utils";
 
@@ -120,21 +121,25 @@ function ModelScene({
     imageMaskConfig,
     initialRotationX,
     initialRotationY,
+    initialRotationZ,
     onRotationChange,
     rootRef,
     cameraRef,
     zoom,
     onApi,
+    onLoaded,
 }: {
     imageUrl: string | null;
     imageMaskConfig: ImageMaskConfigLike | null;
     initialRotationX: number;
     initialRotationY: number;
+    initialRotationZ: number;
     onRotationChange?: (rx: number, ry: number) => void;
     rootRef: React.MutableRefObject<THREE.Group | null>;
     cameraRef: React.MutableRefObject<THREE.PerspectiveCamera | null>;
     zoom: number;
     onApi?: (api: IPhone13ProMax3DApi | null) => void;
+    onLoaded?: () => void;
 }) {
     const gltf = useGLTF("/models/apple_iphone_13_pro_max.glb") as unknown as {
         nodes: GLTFNodes;
@@ -145,6 +150,7 @@ function ModelScene({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const orbitRef = useRef<any>(null);
     const lastLoadedImageUrlRef = useRef<string | null>(null);
+    const lastLoadedMaskKeyRef = useRef<string | null>(null);
     const wallpaperMatRef = useRef<THREE.MeshStandardMaterial | null>(null);
 
     useEffect(() => {
@@ -165,12 +171,21 @@ function ModelScene({
         const mat = wallpaperMatRef.current;
         if (!mat) return;
 
+        // Serializa el mask para detectar cambios. Si el mask cambia,
+        // la textura debe regenerarse aunque la imagen no cambie.
+        const maskKey = imageMaskConfig ? JSON.stringify(imageMaskConfig) : null;
+
         if (!imageUrl) {
             if (mat.map) { mat.map.dispose(); mat.map = null; mat.needsUpdate = true; }
             lastLoadedImageUrlRef.current = null;
+            lastLoadedMaskKeyRef.current = null;
             return;
         }
-        if (lastLoadedImageUrlRef.current === imageUrl) return;
+        // Skip solo si la imagen Y el mask no cambiaron
+        if (
+            lastLoadedImageUrlRef.current === imageUrl &&
+            lastLoadedMaskKeyRef.current === maskKey
+        ) return;
 
         const img = new Image();
         img.crossOrigin = "anonymous";
@@ -189,12 +204,26 @@ function ModelScene({
             mat.map = tex;
             mat.needsUpdate = true;
             lastLoadedImageUrlRef.current = imageUrl;
+            lastLoadedMaskKeyRef.current = maskKey;
+            onLoaded?.();
+        };
+        img.onerror = () => {
+            // Even on error, hide the loader so the user sees the device
+            // (with the original iOS wallpaper) instead of a permanent spinner.
+            onLoaded?.();
         };
         img.src = imageUrl;
-    }, [imageUrl, imageMaskConfig]);
+    }, [imageUrl, imageMaskConfig, onLoaded]);
 
     useEffect(() => {
-        // Microtask delay para asegurar que OrbitControls ya está montado
+        // Reposiciona OrbitControls cuando cambian initialRotationX/Y.
+        // Permite que el crosshair "Rotation XY" del popup Custom del
+        // PhotoEditorPlaceholder mueva la cámara en tiempo real.
+        // NO interfiere con el drag del usuario porque:
+        // - El drag llama onEnd al TERMINAR, no en cada frame
+        // - El setFromSphericalCoords es determinístico: la posición
+        //   calculada desde los props ES la misma que el drag dejó
+        //   (mismo phi/theta/radius), así que no hay "salto"
         const id = setTimeout(() => {
             const orbit = orbitRef.current;
             if (!orbit) return;
@@ -206,7 +235,19 @@ function ModelScene({
             orbit.update();
         }, 0);
         return () => clearTimeout(id);
-    }, []);
+    }, [initialRotationX, initialRotationY, zoom]);
+
+    // Sync initialRotationZ → group rotation.z (mismo patrón que Laptop3DViewer).
+    // Permite que el slider "Rotation Z" del popup Custom del
+    // PhotoEditorPlaceholder se refleje en el modelo. NO interfiere
+    // con el drag de OrbitControls (que solo afecta X/Y vía la cámara),
+    // así que es seguro ejecutar este useEffect en cada cambio de prop.
+    useEffect(() => {
+        const root = rootRef.current;
+        if (root) {
+            root.rotation.z = initialRotationZ * (Math.PI / 180);
+        }
+    }, [initialRotationZ]);
 
     return (
         <>
@@ -235,7 +276,6 @@ function ModelScene({
             />
 
             <Environment preset="city" background={false} />
-
             <ambientLight intensity={0.3} />
             <directionalLight position={[3, 6, 5]} intensity={0.6} />
             <directionalLight position={[-4, -2, 3]} intensity={0.25} color="#c8d8ff" />
@@ -278,13 +318,98 @@ function ModelScene({
     );
 }
 
+// ─── CanvasWithLoader ────────────────────────────────────────────────────────
+// Owns its own `loaded` state. Remounting via `key={imageUrl}` is the
+// idiomatic React way to reset state when the image changes — no
+// cascading setState in useEffect.
+function CanvasWithLoader({
+    imageUrl,
+    imageMaskConfig,
+    initialRotationX,
+    initialRotationY,
+    initialRotationZ,
+    onRotationChange,
+    rootRef,
+    cameraRef,
+    zoom,
+    onApi,
+    onMount,
+}: {
+    imageUrl: string | null;
+    imageMaskConfig: ImageMaskConfigLike | null;
+    initialRotationX: number;
+    initialRotationY: number;
+    initialRotationZ: number;
+    onRotationChange?: (rx: number, ry: number) => void;
+    rootRef: React.MutableRefObject<THREE.Group | null>;
+    cameraRef: React.MutableRefObject<THREE.PerspectiveCamera | null>;
+    zoom: number;
+    onApi?: (api: IPhone13ProMax3DApi | null) => void;
+    onMount?: (canvas: HTMLCanvasElement) => void;
+}) {
+    const [loaded, setLoaded] = useState(false);
+
+    return (
+        <>
+            <Canvas
+                style={{ width: "100%", height: "100%", overflow: "visible" }}
+                gl={{
+                    antialias: true,
+                    alpha: true,
+                    preserveDrawingBuffer: true,
+                    powerPreference: "high-performance",
+                    // Permite software rendering si la GPU no soporta WebGL2 —
+                    // evita "Context Lost" en hardware limitado.
+                    failIfMajorPerformanceCaveat: false,
+                }}
+                // dpr=2: balance entre nitidez y consumo de VRAM. dpr=4
+                // saturaba la GPU junto con el GLB pesado del iPhone 13
+                // Pro Max + Environment HDR y causaba "Context Lost".
+                dpr={2}
+                onCreated={({ gl, scene }) => {
+                    gl.outputColorSpace = THREE.SRGBColorSpace;
+                    gl.toneMapping = THREE.NeutralToneMapping;
+                    gl.toneMappingExposure = 1.0;
+                    scene.environmentIntensity = 1.6;
+                    onMount?.(gl.domElement);
+                }}
+            >
+                <ModelScene
+                    imageUrl={imageUrl}
+                    imageMaskConfig={imageMaskConfig}
+                    initialRotationX={initialRotationX}
+                    initialRotationY={initialRotationY}
+                    initialRotationZ={initialRotationZ}
+                    onRotationChange={onRotationChange}
+                    rootRef={rootRef}
+                    cameraRef={cameraRef}
+                    zoom={zoom}
+                    onApi={onApi}
+                    onLoaded={() => setLoaded(true)}
+                />
+            </Canvas>
+
+            {/* Loader — covers the white wallpaper texture while the
+                user's image is being decoded. */}
+            {!loaded && (
+                <div
+                    className="absolute inset-0 flex items-center justify-center pointer-events-none"
+                    style={{ zIndex: 4 }}
+                >
+                    <div className="w-6 h-6 border-2 border-white/20 border-t-white/60 rounded-full animate-spin" />
+                </div>
+            )}
+        </>
+    );
+}
+
 // ─── Componente público ──────────────────────────────────────────────────────
 export function IPhone13ProMax3DViewer({
     imageUrl = null,
     imageMaskConfig = null,
     initialRotationX = -58.23,
     initialRotationY = -29.82,
-    initialRotationZ: _initialRotationZ = 0,
+    initialRotationZ = 0,
     onRotationChange,
     onMount,
     onApi,
@@ -304,13 +429,6 @@ export function IPhone13ProMax3DViewer({
     const computedBlur = tEased * 60;   // 0–60 px
     const computedOpacity = tEased * 0.7;  // 0–0.7
 
-    const parseShadowColor = (hex: string, opacity: number): string => {
-        const h = hex.replace("#", "");
-        const r = parseInt(h.length === 3 ? h[0] + h[0] : h.slice(0, 2), 16);
-        const g = parseInt(h.length === 3 ? h[1] + h[1] : h.slice(2, 4), 16);
-        const b = parseInt(h.length === 3 ? h[2] + h[2] : h.slice(4, 6), 16);
-        return `rgba(${r},${g},${b},${opacity.toFixed(3)})`;
-    };
     const shadowRgba = shadowColor.startsWith("#")
         ? parseShadowColor(shadowColor, computedOpacity)
         : shadowColor;
@@ -324,6 +442,7 @@ export function IPhone13ProMax3DViewer({
                 transform: `scale(${scale})`,
                 width: 480,
                 height: 1000 + (hasShadow ? computedBlur * 0.8 : 0),
+                marginTop: "200px"
        
             }}
         >
@@ -370,35 +489,20 @@ export function IPhone13ProMax3DViewer({
                     onPointerUp={() => setGrabbing(false)}
                     onPointerLeave={() => setGrabbing(false)}
                 >
-                    <Canvas
-                        style={{ width: "100%", height: "100%", overflow: "visible" }}
-                        gl={{
-                            antialias: true,
-                            alpha: true,
-                            preserveDrawingBuffer: true,
-                            powerPreference: "high-performance",
-                        }}
-                        dpr={4}
-                        onCreated={({ gl, scene }) => {
-                            gl.outputColorSpace = THREE.SRGBColorSpace;
-                            gl.toneMapping = THREE.NeutralToneMapping;
-                            gl.toneMappingExposure = 1.0;
-                            scene.environmentIntensity = 1.6;
-                            onMount?.(gl.domElement);
-                        }}
-                    >
-                        <ModelScene
-                            imageUrl={imageUrl}
-                            imageMaskConfig={imageMaskConfig}
-                            initialRotationX={initialRotationX}
-                            initialRotationY={initialRotationY}
-                            onRotationChange={onRotationChange}
-                            rootRef={rootRef}
-                            cameraRef={cameraRef}
-                            zoom={zoom}
-                            onApi={onApi}
-                        />
-                    </Canvas>
+                    <CanvasWithLoader
+                        key={imageUrl ?? "no-image"}
+                        imageUrl={imageUrl}
+                        imageMaskConfig={imageMaskConfig}
+                        initialRotationX={initialRotationX}
+                        initialRotationY={initialRotationY}
+                        initialRotationZ={initialRotationZ}
+                        onRotationChange={onRotationChange}
+                        rootRef={rootRef}
+                        cameraRef={cameraRef}
+                        zoom={zoom}
+                        onApi={onApi}
+                        onMount={onMount}
+                    />
                 </div>
             </div>
         </div>

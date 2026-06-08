@@ -2131,7 +2131,7 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
                                                     : "none",
                                             }}
                                         >
-                                            <div style={{ position: "relative", zIndex: 50 }} className="top-50">
+                                            <div style={{ position: "relative", zIndex: 50 }} className="top-120">
                                                 <EditorHoverTooltip show={isVideoHovered && mediaType === "image"} />
                                             </div>
 
@@ -2157,10 +2157,12 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
                                                 />
                                             ) : imagePhoneDevice === "iphone-13-pro-max" ? (
                                                 <IPhone13ProMax3DViewer
+                                                    key={`iphone-13-pro-max-${imagePhonePresetId}`}
                                                     imageUrl={imageUrl}
                                                     imageMaskConfig={imageMaskConfig}
                                                     initialRotationX={imagePhoneRotX}
                                                     initialRotationY={imagePhoneRotY}
+                                                    initialRotationZ={imagePhoneRotZ}
                                                     onRotationChange={(rx, ry) => { setImagePhoneRotX(rx); setImagePhoneRotY(ry); }}
                                                     onMount={(canvas) => { imagePhoneCanvasRef.current = canvas; }}
                                                     onApi={(api) => { imagePhoneApiRef.current = api; }}

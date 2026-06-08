@@ -306,7 +306,7 @@ export function PhotoEditorPlaceholder({
                                 ) : (
                                     <div
                                         style={{ perspective: `${config.perspective || 600}px`, perspectiveOrigin: 'center center' }}
-                                        className="w-full h-full flex items-center justify-center p-3" /* Padding sutil */
+                                        className="w-full h-full flex items-center justify-center p-3"
                                     >
                                         <div
                                             className="relative w-full h-full max-w-[92%] max-h-[92%] rounded-lg overflow-hidden border border-white/5 shadow-2xl"
