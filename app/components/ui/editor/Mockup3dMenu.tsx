@@ -135,8 +135,6 @@ export interface Mockup3dMenuProps {
   setImagePhoneRotX: (v: number) => void;
   setImagePhoneRotY: (v: number) => void;
 
-  pushHistory: () => void;
-
   backgroundUrl?: string | null;
   backgroundColorCss?: string | null;
 
@@ -162,8 +160,6 @@ export function Mockup3dMenu({
   setImagePhoneY,
   setImagePhoneRotX,
   setImagePhoneRotY,
-
-  pushHistory,
 
   backgroundUrl,
   backgroundColorCss,
@@ -253,7 +249,7 @@ export function Mockup3dMenu({
             min={30}
             max={300}
             step={1}
-            onChange={(v) => { pushHistory(); setImagePhoneScale(v / 100); }}
+            onChange={(v) => { setImagePhoneScale(v / 100); }}
             suffix="%"
           />
 
@@ -265,7 +261,7 @@ export function Mockup3dMenu({
               min={0}
               max={100}
               step={1}
-              onChange={(v) => { pushHistory(); setImagePhoneOpening(v / 100); }}
+              onChange={(v) => { setImagePhoneOpening(v / 100); }}
               suffix="%"
             />
           )}
@@ -277,7 +273,7 @@ export function Mockup3dMenu({
             min={0}
             max={100}
             step={1}
-            onChange={(v) => { pushHistory(); setImagePhoneShadow(v / 100); }}
+            onChange={(v) => { setImagePhoneShadow(v / 100); }}
             suffix="%"
           />
 
@@ -288,7 +284,6 @@ export function Mockup3dMenu({
               y={imagePhoneY}
               onChangeX={setImagePhoneX}
               onChangeY={setImagePhoneY}
-              onDragStart={pushHistory}
               backgroundUrl={backgroundUrl}
               backgroundColorCss={backgroundColorCss}
             />

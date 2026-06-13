@@ -234,7 +234,6 @@ export function MockupMenu({
     imagePhoneShadow,
     setImagePhoneShadow,
     setImagePhoneShadowColor,
-    pushHistory,
   } = useMockup3dContext();
 
   // ── Derived ──
@@ -312,7 +311,6 @@ export function MockupMenu({
       setImagePhoneOpening(1);
       setImagePhoneScale(1);
     } else {
-      // phone, iphone, samsung — all rendered through Phone3DViewer.tsx
       setImagePhoneRotX(-58.23);
       setImagePhoneRotY(-29.82);
     }
@@ -364,7 +362,6 @@ export function MockupMenu({
         setImagePhoneY={setImagePhoneY}
         setImagePhoneRotX={setImagePhoneRotX}
         setImagePhoneRotY={setImagePhoneRotY}
-        pushHistory={pushHistory}
         backgroundUrl={resolvedBackgroundUrl}
         backgroundColorCss={backgroundColorCss}
         onBack={() => setPage("home")}

@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useState, type ReactNode } from "react";
 
 interface Mockup3dState {
   selectedTemplateId: string | null;
@@ -48,16 +48,6 @@ interface Mockup3dState {
   /** Drop-shadow color (CSS color string) */
   imagePhoneShadowColor: string;
   setImagePhoneShadowColor: (v: string) => void;
-  /** Undo the last motion transform change. Returns true if there was something to undo. */
-  undoMotion: () => boolean;
-  /** Redo a previously-undone motion transform change. Returns true if there was something to redo. */
-  redoMotion: () => boolean;
-  /** Push the current motion transform state to the undo history. */
-  pushHistory: () => void;
-  /** True when there is at least one entry in the motion undo stack. */
-  canUndoMotion: boolean;
-  /** True when there is at least one entry in the motion redo stack. */
-  canRedoMotion: boolean;
 }
 
 const Mockup3dContext = createContext<Mockup3dState | null>(null);
@@ -66,7 +56,6 @@ export function Mockup3dProvider({ children }: { children: ReactNode }) {
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   const [motionImageUrl, setMotionImageUrl] = useState<string | null>(null);
   const [motionIntensity, setMotionIntensity] = useState(70);
-  // Add this with your other useState hooks inside Mockup3dProvider
 
   // Image mode phone mockup
   const [imagePhoneActive, setImagePhoneActive] = useState(false);
@@ -82,71 +71,6 @@ export function Mockup3dProvider({ children }: { children: ReactNode }) {
   const [imagePhoneOpening, setImagePhoneOpening] = useState(1);
   const [imagePhoneShadow, setImagePhoneShadow] = useState(0.6);
   const [imagePhoneShadowColor, setImagePhoneShadowColor] = useState("#000000");
-
-  // ── Undo/redo stack for motion transforms (max 50 entries) ────────────────
-  const historyRef = useRef<{
-    past: Array<{
-      x: number; y: number; scale: number;
-      rx: number; ry: number; rz: number;
-      opening: number; shadow: number; shadowColor: string;
-    }>;
-    future: Array<{
-      x: number; y: number; scale: number;
-      rx: number; ry: number; rz: number;
-      opening: number; shadow: number; shadowColor: string;
-    }>;
-  }>({ past: [], future: [] });
-  const MAX_HISTORY = 50;
-  const [canUndoMotion, setCanUndoMotion] = useState(false);
-  const [canRedoMotion, setCanRedoMotion] = useState(false);
-
-  const refreshCanFlags = () => {
-    setCanUndoMotion(historyRef.current.past.length > 0);
-    setCanRedoMotion(historyRef.current.future.length > 0);
-  };
-
-  const pushHistory = () => {
-    historyRef.current.past.push({
-      x: imagePhoneX, y: imagePhoneY, scale: imagePhoneScale,
-      rx: imagePhoneRotX, ry: imagePhoneRotY, rz: imagePhoneRotZ,
-      opening: imagePhoneOpening, shadow: imagePhoneShadow, shadowColor: imagePhoneShadowColor,
-    });
-    if (historyRef.current.past.length > MAX_HISTORY) historyRef.current.past.shift();
-    historyRef.current.future = [];
-    refreshCanFlags();
-  };
-
-  const undoMotion = useCallback(() => {
-    const past = historyRef.current.past;
-    if (past.length === 0) return false;
-    historyRef.current.future.push({
-      x: imagePhoneX, y: imagePhoneY, scale: imagePhoneScale,
-      rx: imagePhoneRotX, ry: imagePhoneRotY, rz: imagePhoneRotZ,
-      opening: imagePhoneOpening, shadow: imagePhoneShadow, shadowColor: imagePhoneShadowColor,
-    });
-    const snap = past.pop()!;
-    setImagePhoneX(snap.x); setImagePhoneY(snap.y); setImagePhoneScale(snap.scale);
-    setImagePhoneRotX(snap.rx); setImagePhoneRotY(snap.ry); setImagePhoneRotZ(snap.rz);
-    setImagePhoneOpening(snap.opening); setImagePhoneShadow(snap.shadow); setImagePhoneShadowColor(snap.shadowColor);
-    refreshCanFlags();
-    return true;
-  }, [imagePhoneX, imagePhoneY, imagePhoneScale, imagePhoneRotX, imagePhoneRotY, imagePhoneRotZ, imagePhoneOpening, imagePhoneShadow, imagePhoneShadowColor]);
-
-  const redoMotion = useCallback(() => {
-    const future = historyRef.current.future;
-    if (future.length === 0) return false;
-    historyRef.current.past.push({
-      x: imagePhoneX, y: imagePhoneY, scale: imagePhoneScale,
-      rx: imagePhoneRotX, ry: imagePhoneRotY, rz: imagePhoneRotZ,
-      opening: imagePhoneOpening, shadow: imagePhoneShadow, shadowColor: imagePhoneShadowColor,
-    });
-    const snap = future.pop()!;
-    setImagePhoneX(snap.x); setImagePhoneY(snap.y); setImagePhoneScale(snap.scale);
-    setImagePhoneRotX(snap.rx); setImagePhoneRotY(snap.ry); setImagePhoneRotZ(snap.rz);
-    setImagePhoneOpening(snap.opening); setImagePhoneShadow(snap.shadow); setImagePhoneShadowColor(snap.shadowColor);
-    refreshCanFlags();
-    return true;
-  }, [imagePhoneX, imagePhoneY, imagePhoneScale, imagePhoneRotX, imagePhoneRotY, imagePhoneRotZ, imagePhoneOpening, imagePhoneShadow, imagePhoneShadowColor]);
 
   return (
     <Mockup3dContext.Provider value={{
@@ -166,9 +90,6 @@ export function Mockup3dProvider({ children }: { children: ReactNode }) {
       imagePhoneOpening, setImagePhoneOpening,
       imagePhoneShadow, setImagePhoneShadow,
       imagePhoneShadowColor, setImagePhoneShadowColor,
-      undoMotion, redoMotion, pushHistory,
-      canUndoMotion,
-      canRedoMotion,
     }}>
       {children}
     </Mockup3dContext.Provider>

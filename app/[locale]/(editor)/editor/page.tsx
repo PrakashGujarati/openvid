@@ -62,8 +62,6 @@ export default function Editor() {
     // Auth — needed for building production-ready Recipe JSON
     const { user } = useAuth();
     const {
-        undoMotion, redoMotion, pushHistory,
-        canUndoMotion, canRedoMotion,
         imagePhoneActive, setImagePhoneActive,
         imagePhoneX, setImagePhoneX,
         imagePhoneY, setImagePhoneY,
@@ -73,6 +71,7 @@ export default function Editor() {
         imagePhoneRotZ, setImagePhoneRotZ,
         imagePhonePerspective, setImagePhonePerspective,
         imagePhoneDevice, setImagePhoneDevice,
+        imagePhonePresetId, setImagePhonePresetId,
         imagePhoneOpening, setImagePhoneOpening,
         imagePhoneShadow, setImagePhoneShadow,
         imagePhoneShadowColor, setImagePhoneShadowColor,
@@ -1054,6 +1053,19 @@ export default function Editor() {
                 apply3DToBackground,
                 imageMaskConfig,
                 videoMaskConfig,
+                imagePhoneActive,
+                imagePhoneX,
+                imagePhoneY,
+                imagePhoneScale,
+                imagePhoneRotX,
+                imagePhoneRotY,
+                imagePhoneRotZ,
+                imagePhonePerspective,
+                imagePhoneDevice,
+                imagePhonePresetId,
+                imagePhoneOpening,
+                imagePhoneShadow,
+                imagePhoneShadowColor,
             });
         }, 300);
         return () => {
@@ -1068,6 +1080,9 @@ export default function Editor() {
         zoomFragments, mockupId, mockupConfig, canvasElements,
         audioTracks, muteOriginalAudio, masterVolume, cameraConfig,
         videoTransform, imageTransform, apply3DToBackground, imageMaskConfig, videoMaskConfig,
+        imagePhoneActive, imagePhoneX, imagePhoneY, imagePhoneScale, imagePhoneRotX,
+        imagePhoneRotY, imagePhoneRotZ, imagePhonePerspective, imagePhoneDevice,
+        imagePhonePresetId, imagePhoneOpening, imagePhoneShadow, imagePhoneShadowColor,
         setEditorState
     ]);
 
@@ -1098,6 +1113,19 @@ export default function Editor() {
         setApply3DToBackground(editorState.apply3DToBackground);
         setImageMaskConfig(editorState.imageMaskConfig);
         setVideoMaskConfig(editorState.videoMaskConfig);
+        setImagePhoneActive(editorState.imagePhoneActive);
+        setImagePhoneX(editorState.imagePhoneX);
+        setImagePhoneY(editorState.imagePhoneY);
+        setImagePhoneScale(editorState.imagePhoneScale);
+        setImagePhoneRotX(editorState.imagePhoneRotX);
+        setImagePhoneRotY(editorState.imagePhoneRotY);
+        setImagePhoneRotZ(editorState.imagePhoneRotZ);
+        setImagePhonePerspective(editorState.imagePhonePerspective);
+        setImagePhoneDevice(editorState.imagePhoneDevice);
+        setImagePhonePresetId(editorState.imagePhonePresetId);
+        setImagePhoneOpening(editorState.imagePhoneOpening);
+        setImagePhoneShadow(editorState.imagePhoneShadow);
+        setImagePhoneShadowColor(editorState.imagePhoneShadowColor);
     }, [editorState]);
 
     // Handler para cambiar el mockup
@@ -2132,21 +2160,6 @@ export default function Editor() {
 
             if (isInputFocused) return;
 
-            // Motion-specific undo/redo when the motion tool is active
-            if (activeTool === "motion") {
-                if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
-                    e.preventDefault();
-                    undoMotion();
-                    return;
-                }
-                if (((e.ctrlKey || e.metaKey) && e.key === 'y') ||
-                    ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'z')) {
-                    e.preventDefault();
-                    redoMotion();
-                    return;
-                }
-            }
-
             if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
                 e.preventDefault();
                 if (canUndo) {
@@ -2165,7 +2178,7 @@ export default function Editor() {
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [undo, redo, canUndo, canRedo, activeTool, undoMotion, redoMotion]);
+    }, [undo, redo, canUndo, canRedo]);
 
     // Keyboard listener for Ctrl+V image paste (photo mode only)
     useEffect(() => {
@@ -3093,11 +3106,6 @@ export default function Editor() {
                                 imageExportProgress={imageExportProgress}
                                 canvasWidth={customAspectRatio?.width || 1920}
                                 canvasHeight={customAspectRatio?.height || 1080}
-                                activeTool={activeTool}
-                                onUndoMotion={undoMotion}
-                                onRedoMotion={redoMotion}
-                                canUndoMotion={canUndoMotion}
-                                canRedoMotion={canRedoMotion}
                             />
                         }
                         ref={canvasRef}
