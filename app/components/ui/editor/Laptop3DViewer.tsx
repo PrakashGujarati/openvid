@@ -203,8 +203,6 @@ function ModelScene({
     img.src = imageUrl;
   }, [imageUrl, imageMaskConfig, cropArea, gl, videoElement]);
 
-  // Helper: if a video texture is already created and a screen material
-  // is now available, attach the texture to the material.
   const applyVideoTextureIfReady = useCallback(() => {
     const mat = screenMatRef.current;
     const tex = videoTextureRef.current;
@@ -355,13 +353,9 @@ function ModelScene({
     };
   }, []);
 
-  // Track previous rotation values to avoid resetting the camera when
-  // the same values are passed back from OrbitControls onEnd callback.
   const prevRotationRef = useRef({ x: initialRotationX, y: initialRotationY });
 
   useEffect(() => {
-    // Skip if the rotation didn't actually change (e.g. OrbitControls
-    // reported the same values back, or a parent re-render passed same props).
     if (prevRotationRef.current.x === initialRotationX && prevRotationRef.current.y === initialRotationY) return;
     const orbit = orbitRef.current;
     if (!orbit) return;

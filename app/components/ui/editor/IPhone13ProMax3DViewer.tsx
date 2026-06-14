@@ -267,15 +267,10 @@ function ModelScene({
         img.src = imageUrl;
     }, [imageUrl, imageMaskConfig, cropArea, gl, videoElement]);
 
-    // Track previous rotation values to avoid resetting the camera when
-    // the same values are passed back from OrbitControls onEnd callback.
-    // Only reset when the parent intentionally changes the rotation (e.g. preset click).
-    const prevRotationRef = useRef({ x: initialRotationX, y: initialRotationY });
-
+    const prevRotationRef = useRef<{ x: number; y: number } | null>(null);
     useEffect(() => {
-        // Skip if the rotation didn't actually change (e.g. OrbitControls
-        // reported the same values back, or a parent re-render passed same props).
-        if (prevRotationRef.current.x === initialRotationX && prevRotationRef.current.y === initialRotationY) return;
+        if (prevRotationRef.current?.x === initialRotationX &&
+            prevRotationRef.current?.y === initialRotationY) return;
         const id = setTimeout(() => {
             const orbit = orbitRef.current;
             if (!orbit) return;
@@ -285,6 +280,7 @@ function ModelScene({
             const theta = initialRotationY * DEG;
             orbit.object.position.setFromSphericalCoords(radius, phi, theta);
             orbit.update();
+
             prevRotationRef.current = { x: initialRotationX, y: initialRotationY };
         }, 0);
         return () => clearTimeout(id);
@@ -478,7 +474,6 @@ export function IPhone13ProMax3DViewer({
 
     return (
         <>
-            {/* 3. Renderizamos el panel extraído exactamente igual que en el otro componente */}
             <ControlsPopup />
 
             <div

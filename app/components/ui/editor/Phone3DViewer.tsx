@@ -19,7 +19,6 @@ import {
 } from "@/lib/phone3d.utils";
 import type { OrbitControls as OrbitControlsType } from 'three-stdlib';
 
-// 1. Importamos tu popup y el nuevo custom hook
 import { ControlsPopup } from "@/components/ui/ControlsPopup";
 import { EnvironmentPreset, ViewerControls3D } from "@/lib/viewer-controls3d";
 
@@ -243,14 +242,11 @@ function ModelScene({
             return;
         }
 
-        // Detectamos el dispositivo de forma síncrona usando la prop modelUrl directamente
         const device = getDeviceFromModelUrl(modelUrl);
         const isDefaultPhone = device === "phone";
 
         const tex = new THREE.VideoTexture(videoElement);
 
-        // SOLUCIÓN AL VIDEO AL REVÉS: 
-        // Si NO es el teléfono por defecto (es decir, es iPhone 15 o S25), flipY DEBE ser true
         tex.flipY = !isDefaultPhone;
 
         tex.colorSpace = THREE.SRGBColorSpace;
