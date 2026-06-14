@@ -1,6 +1,6 @@
 "use client";
 
-import { Canvas, useThree } from "@react-three/fiber";
+import { Canvas, useThree, useFrame } from "@react-three/fiber";
 import { PerspectiveCamera, Environment, OrbitControls } from "@react-three/drei";
 import { useEffect, useRef, useState, Suspense, useCallback } from "react";
 import * as THREE from "three";
@@ -42,6 +42,7 @@ interface Props {
     zoom?: number;
     shadowIntensity?: number;
     shadowColor?: string;
+    videoElement?: HTMLVideoElement | null;
 }
 
 const DEG = Math.PI / 180;
@@ -88,6 +89,7 @@ function ModelScene({
     modelUrl,
     onApi,
     onLoaded,
+    videoElement,
 }: Props & {
     rootRef: React.MutableRefObject<THREE.Group | null>;
     cameraRef: React.MutableRefObject<THREE.PerspectiveCamera | null>;
@@ -97,6 +99,7 @@ function ModelScene({
     
     const orbitRef = useRef<OrbitControlsType | null>(null);
     const screenMatRef = useRef<THREE.MeshBasicMaterial | null>(null);
+    const videoTextureRef = useRef<THREE.VideoTexture | null>(null);
     const [modelGroup, setModelGroup] = useState<THREE.Group | null>(null);
     const lastLoadedUrlRef = useRef<string | null>(null);
     const lastLoadedCropKeyRef = useRef<string | null>(null);
@@ -104,6 +107,12 @@ function ModelScene({
     const flipYRef = useRef<boolean>(false);
 
     const { autoRotate, rotationSpeed, glow, environment } = ViewerControls3D();
+
+    useFrame(() => {
+        if (videoElement && videoTextureRef.current) {
+            videoTextureRef.current.needsUpdate = true;
+        }
+    });
 
     useEffect(() => {
         const api: Phone3DApi = {
@@ -124,6 +133,7 @@ function ModelScene({
     }, [onApi, gl, scene, cameraRef]);
 
     const applyTexture = useCallback(() => {
+        if (videoElement) return;
         const mat = screenMatRef.current;
         if (!mat) return;
         const cropKey = cropArea ? JSON.stringify(cropArea) : null;
@@ -202,7 +212,46 @@ function ModelScene({
             lastLoadedCropKeyRef.current = cropKey;
         };
         img.src = imageUrl;
-    }, [imageUrl, imageMaskConfig, cropArea, modelUrl, gl]);
+    }, [imageUrl, imageMaskConfig, cropArea, modelUrl, gl, videoElement]);
+
+    useEffect(() => {
+        if (!videoElement) {
+            if (videoTextureRef.current) {
+                videoTextureRef.current.dispose();
+                videoTextureRef.current = null;
+            }
+            return;
+        }
+        const tex = new THREE.VideoTexture(videoElement);
+        tex.flipY = flipYRef.current;
+        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.generateMipmaps = true;
+        tex.minFilter = THREE.LinearMipmapLinearFilter;
+        tex.magFilter = THREE.LinearFilter;
+        tex.wrapS = THREE.ClampToEdgeWrapping;
+        tex.wrapT = THREE.ClampToEdgeWrapping;
+        if (videoTextureRef.current) {
+            videoTextureRef.current.dispose();
+        }
+        videoTextureRef.current = tex;
+
+        const mat = screenMatRef.current;
+        if (mat) {
+            if (mat.map && mat.map !== tex) {
+                mat.map.dispose();
+            }
+            mat.map = tex;
+            mat.color.set(0xffffff);
+            mat.needsUpdate = true;
+        }
+
+        return () => {
+            if (videoTextureRef.current === tex) {
+                videoTextureRef.current = null;
+            }
+            tex.dispose();
+        };
+    }, [videoElement]);
 
     const applyTextureRef = useRef(applyTexture);
     useEffect(() => {

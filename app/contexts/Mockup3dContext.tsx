@@ -57,7 +57,6 @@ export function Mockup3dProvider({ children }: { children: ReactNode }) {
   const [motionImageUrl, setMotionImageUrl] = useState<string | null>(null);
   const [motionIntensity, setMotionIntensity] = useState(70);
 
-  // Image mode phone mockup
   const [imagePhoneActive, setImagePhoneActive] = useState(false);
   const [imagePhoneX, setImagePhoneX] = useState(0);
   const [imagePhoneY, setImagePhoneY] = useState(0);

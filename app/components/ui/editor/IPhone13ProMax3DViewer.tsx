@@ -1,6 +1,6 @@
 "use client";
 
-import { Canvas, useThree } from "@react-three/fiber";
+import { Canvas, useThree, useFrame } from "@react-three/fiber";
 import { PerspectiveCamera, useGLTF, Environment, OrbitControls } from "@react-three/drei";
 import { useEffect, useRef, useState, Suspense } from "react";
 import * as THREE from "three";
@@ -33,6 +33,7 @@ interface Props {
     zoom?: number;
     shadowIntensity?: number;
     shadowColor?: string;
+    videoElement?: HTMLVideoElement | null;
 }
 
 const TEX_W = 1284 * 2;
@@ -108,6 +109,7 @@ function ModelScene({
     zoom,
     onApi,
     onLoaded,
+    videoElement,
 }: {
     imageUrl: string | null;
     imageMaskConfig: ImageMaskConfigLike | null;
@@ -121,6 +123,7 @@ function ModelScene({
     zoom: number;
     onApi?: (api: IPhone13ProMax3DApi | null) => void;
     onLoaded?: () => void;
+    videoElement?: HTMLVideoElement | null;
 }) {
     const { gl } = useThree();
     const gltf = useGLTF("/models/apple_iphone_13_pro_max.glb") as unknown as {
@@ -134,8 +137,15 @@ function ModelScene({
     const lastLoadedMaskKeyRef = useRef<string | null>(null);
     const lastLoadedCropKeyRef = useRef<string | null>(null);
     const wallpaperMatRef = useRef<THREE.MeshStandardMaterial | null>(null);
+    const videoTextureRef = useRef<THREE.VideoTexture | null>(null);
 
     const { autoRotate, rotationSpeed, glow, environment } = ViewerControls3D();
+
+    useFrame(() => {
+        if (videoElement && videoTextureRef.current) {
+            videoTextureRef.current.needsUpdate = true;
+        }
+    });
 
     useEffect(() => {
         const api: IPhone13ProMax3DApi = {
@@ -159,8 +169,51 @@ function ModelScene({
     }, [materials.Wallpaper]);
 
     useEffect(() => {
+        if (!videoElement) {
+            if (videoTextureRef.current) {
+                videoTextureRef.current.dispose();
+                videoTextureRef.current = null;
+            }
+            return;
+        }
+        const tex = new THREE.VideoTexture(videoElement);
+        tex.flipY = true;
+        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.generateMipmaps = true;
+        tex.minFilter = THREE.LinearMipmapLinearFilter;
+        tex.magFilter = THREE.LinearFilter;
+        tex.wrapS = THREE.ClampToEdgeWrapping;
+        tex.wrapT = THREE.ClampToEdgeWrapping;
+        if (videoTextureRef.current) {
+            videoTextureRef.current.dispose();
+        }
+        videoTextureRef.current = tex;
+
+        const applyVideoTex = () => {
+            const mat = wallpaperMatRef.current;
+            if (!mat) return;
+            if (mat.map && mat.map !== tex) {
+                mat.map.dispose();
+            }
+            mat.map = tex;
+            mat.color.set(0xffffff);
+            mat.needsUpdate = true;
+        };
+        applyVideoTex();
+
+        return () => {
+            if (videoTextureRef.current === tex) {
+                videoTextureRef.current = null;
+            }
+            tex.dispose();
+        };
+    }, [videoElement]);
+
+    useEffect(() => {
         const mat = wallpaperMatRef.current;
         if (!mat) return;
+
+        if (videoElement) return;
 
         const maskKey = imageMaskConfig ? JSON.stringify(imageMaskConfig) : null;
         const cropKey = cropArea ? JSON.stringify(cropArea) : null;
@@ -212,7 +265,7 @@ function ModelScene({
             lastLoadedCropKeyRef.current = cropKey;
         };
         img.src = imageUrl;
-    }, [imageUrl, imageMaskConfig, cropArea, gl]);
+    }, [imageUrl, imageMaskConfig, cropArea, gl, videoElement]);
 
     useEffect(() => {
         const id = setTimeout(() => {
@@ -316,6 +369,7 @@ function CanvasWithLoader({
     zoom,
     onApi,
     onMount,
+    videoElement,
 }: {
     imageUrl: string | null;
     imageMaskConfig: ImageMaskConfigLike | null;
@@ -329,6 +383,7 @@ function CanvasWithLoader({
     zoom: number;
     onApi?: (api: IPhone13ProMax3DApi | null) => void;
     onMount?: (canvas: HTMLCanvasElement) => void;
+    videoElement?: HTMLVideoElement | null;
 }) {
     const [loaded, setLoaded] = useState(false);
     return (
@@ -365,6 +420,7 @@ function CanvasWithLoader({
                         zoom={zoom}
                         onApi={onApi}
                         onLoaded={() => setLoaded(true)}
+                        videoElement={videoElement}
                     />
                 </Suspense>
             </Canvas>
@@ -394,6 +450,7 @@ export function IPhone13ProMax3DViewer({
     zoom = 1,
     shadowIntensity = 0,
     shadowColor = "#000000",
+    videoElement = null,
 }: Props) {
     const rootRef = useRef<THREE.Group | null>(null);
     const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
@@ -474,6 +531,7 @@ export function IPhone13ProMax3DViewer({
                             zoom={zoom}
                             onApi={onApi}
                             onMount={onMount}
+                            videoElement={videoElement}
                         />
                     </div>
                 </div>

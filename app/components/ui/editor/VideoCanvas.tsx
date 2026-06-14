@@ -104,7 +104,6 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
 
     // Motion 3D phone overlay state (reads from shared MotionContext)
     const {
-        selectedTemplateId, motionImageUrl,
         imagePhoneActive, imagePhoneX, imagePhoneY,
         imagePhoneScale, setImagePhoneScale,
         imagePhoneRotX, setImagePhoneRotX, imagePhoneRotY, setImagePhoneRotY,
@@ -113,8 +112,7 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
         imagePhoneOpening,
         imagePhoneShadow, imagePhoneShadowColor
     } = useMockup3dContext();
-    // Phone shows whenever a real template is selected AND we are in video mode
-    const motionActive = selectedTemplateId !== null && selectedTemplateId !== "none" && mediaType === "video";
+    // 3D phone overlay is active in both video and image mode
 
     // Ctrl+scroll zoom badge state for image phone overlay
     const [imagePhoneZoomVisible, setImagePhoneZoomVisible] = useState(false);
@@ -223,11 +221,6 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
     // Image zoom state (for photo mode)
     const [imageZoomScale, setImageZoomScale] = useState(1);
 
-    // Motion phone zoom state (Ctrl + scroll, mirrors image mode behaviour)
-    const [motionZoomScale, setMotionZoomScale] = useState(1);
-    const [motionZoomVisible, setMotionZoomVisible] = useState(false);
-    const motionZoomTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
     const lastSetVideoUrlRef = useRef<string | null>(null);
     const preservedVideoStateRef = useRef<{ time: number; playing: boolean } | null>(null);
 
@@ -307,7 +300,7 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
     // Fix: update a ref each render (captures fresh state, no re-render cost)
     // and attach a stable non-passive listener once via useEffect.
     ctrlScrollWheelRef.current = (e: WheelEvent) => {
-        if (!e.ctrlKey || mediaType !== "image" || !imagePhoneActive) return;
+        if (!e.ctrlKey || !imagePhoneActive) return;
         e.preventDefault();
         const next = Math.max(0.3, Math.min(3, imagePhoneScale * (e.deltaY < 0 ? 1.05 : 0.95)));
         setImagePhoneScale(next);
@@ -819,35 +812,6 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
             container.removeEventListener("wheel", handleWheel);
         };
     }, [mediaType, imageUrl]);
-
-    // Motion phone zoom with mouse wheel (Ctrl + scroll) — mirrors image mode behaviour
-    useEffect(() => {
-        if (!motionActive) return;
-
-        const handleWheel = (e: WheelEvent) => {
-            if (!e.ctrlKey && !e.metaKey) return;
-            e.preventDefault();
-            const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
-            setMotionZoomScale(prev => Math.max(0.3, Math.min(3, prev * zoomFactor)));
-            setMotionZoomVisible(true);
-            if (motionZoomTimerRef.current) clearTimeout(motionZoomTimerRef.current);
-            motionZoomTimerRef.current = setTimeout(() => setMotionZoomVisible(false), 1500);
-        };
-
-        const container = previewContainerRef.current;
-        if (!container) return;
-
-        container.addEventListener("wheel", handleWheel, { passive: false });
-        return () => {
-            container.removeEventListener("wheel", handleWheel);
-        };
-    }, [motionActive]);
-
-    // Reset motion zoom when template selection changes
-    useEffect(() => {
-        setMotionZoomScale(1);
-        setMotionZoomVisible(false);
-    }, [selectedTemplateId]);
 
     // Drag & drop handlers for images
     const handleDragOver = (e: React.DragEvent) => {
@@ -1512,79 +1476,18 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
         }
         ctx.restore();
 
-        // ── Phone frame overlay for motion export ──
-        // CSS 3D phone cannot be captured natively; draw a canvas phone bezel so the
-        // export frame shows the phone outline with the video visible through the screen.
-        if (motionActive) {
-            const phoneH = canvasHeight * 0.65;
-            const phoneW = phoneH * (272 / 552);
-            const phoneX = (canvasWidth - phoneW) / 2;
-            const phoneY = (canvasHeight - phoneH) / 2;
-            const scale = phoneW / 272;
-            const outerR = Math.round(44 * scale);
-            const inset = Math.round(5 * scale);
-            const screenR = Math.round(36 * scale);
-
-            ctx.save();
-
-            // Phone bezel — filled with dark color, screen area punched out (even-odd)
-            ctx.beginPath();
-            ctx.roundRect(phoneX, phoneY, phoneW, phoneH, outerR);
-            ctx.roundRect(phoneX + inset, phoneY + inset, phoneW - inset * 2, phoneH - inset * 2, screenR);
-            ctx.fillStyle = "rgba(14, 14, 26, 0.93)";
-            ctx.fill("evenodd");
-
-            // Outer phone border
-            ctx.strokeStyle = "rgba(255,255,255,0.14)";
-            ctx.lineWidth = Math.max(1, 1.5 * scale);
-            ctx.beginPath();
-            ctx.roundRect(phoneX, phoneY, phoneW, phoneH, outerR);
-            ctx.stroke();
-
-            // Screen inner border (subtle)
-            ctx.strokeStyle = "rgba(255,255,255,0.05)";
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.roundRect(phoneX + inset, phoneY + inset, phoneW - inset * 2, phoneH - inset * 2, screenR);
-            ctx.stroke();
-
-            // Dynamic island
-            const diW = phoneW * 0.22;
-            const diH = Math.max(4, phoneH * 0.024);
-            ctx.fillStyle = "#000";
-            ctx.beginPath();
-            ctx.roundRect(phoneX + (phoneW - diW) / 2, phoneY + phoneH * 0.018, diW, diH, diH / 2);
-            ctx.fill();
-
-            // Home indicator
-            const homeW = phoneW * 0.28;
-            const homeH = Math.max(3, 4 * scale);
-            ctx.fillStyle = "rgba(255,255,255,0.28)";
-            ctx.beginPath();
-            ctx.roundRect(phoneX + (phoneW - homeW) / 2, phoneY + phoneH - homeH - inset * 1.5, homeW, homeH, homeH / 2);
-            ctx.fill();
-
-            // Side buttons (left: 2 volume, right: 1 power)
-            const btnW = Math.max(2, 3 * scale);
-            const btnH1 = phoneH * 0.08;
-            const btnH2 = phoneH * 0.11;
-            ctx.fillStyle = "rgba(14,14,26,0.93)";
-            ctx.strokeStyle = "rgba(255,255,255,0.10)";
-            ctx.lineWidth = 1;
-            // volume up
-            ctx.beginPath();
-            ctx.roundRect(phoneX - btnW, phoneY + phoneH * 0.21, btnW, btnH1, btnW / 2);
-            ctx.fill(); ctx.stroke();
-            // volume down
-            ctx.beginPath();
-            ctx.roundRect(phoneX - btnW, phoneY + phoneH * 0.32, btnW, btnH2, btnW / 2);
-            ctx.fill(); ctx.stroke();
-            // power
-            ctx.beginPath();
-            ctx.roundRect(phoneX + phoneW, phoneY + phoneH * 0.27, btnW, btnH2, btnW / 2);
-            ctx.fill(); ctx.stroke();
-
-            ctx.restore();
+        // ── 3D phone mockup overlay for video export ──
+        // Composite the WebGL canvas snapshot just like image mode does.
+        if (imagePhoneActive && imagePhoneCanvasRef.current) {
+            const phoneGL = imagePhoneCanvasRef.current;
+            const domW = canvasDimensions?.width ?? canvasWidth;
+            const pxScale = canvasWidth / domW;
+            const phoneCx = canvasWidth / 2 + imagePhoneX * pxScale;
+            const phoneCy = canvasHeight / 2 + imagePhoneY * pxScale;
+            const drawW = PHONE_W * imagePhoneScale * pxScale;
+            const drawH = PHONE_H * imagePhoneScale * pxScale;
+            imagePhoneApiRef.current?.renderAt(drawW, drawH);
+            ctx.drawImage(phoneGL, phoneCx - drawW / 2, phoneCy - drawH / 2, drawW, drawH);
         }
 
     };
@@ -1843,7 +1746,7 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
                                             // Hide the video layer while a motion template is active;
                                             // the video element stays in the DOM so playback/timing continues.
                                             // In image mode, also hide when the phone overlay is active.
-                                            opacity: (mediaType === "video" ? motionActive : imagePhoneActive) ? 0 : 1,
+                                            opacity: imagePhoneActive ? 0 : 1,
                                             transition: 'opacity 0.25s ease, padding 0.2s',
                                             ...(mediaType === "image" && imageTransform && !apply3DToBackground ? {
                                                 perspective: `${imageTransform.perspective || 600}px`,
@@ -1873,7 +1776,7 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
                                                 transition: (mediaType === "image" && imageTransform && !apply3DToBackground)
                                                     ? 'transform 300ms cubic-bezier(0.25, 0.46, 0.45, 0.94)'
                                                     : isDraggingVideo || isDraggingRotation ? 'none' : 'transform 0.15s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
-                                                pointerEvents: motionActive ? 'none' : 'auto',
+                                                pointerEvents: imagePhoneActive ? 'none' : 'auto',
                                                 transformStyle: mediaType === "image" && !apply3DToBackground ? 'preserve-3d' : undefined,
                                             }}
                                             onMouseEnter={() => hasMedia && setIsVideoHovered(true)}
@@ -1945,7 +1848,7 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
                                                         </div>
                                                     </div>
                                                 )}
-                                                {(isVideoSelected || isVideoHovered) && hasMedia && !isDraggingRotation && !(mediaType === "image" && imagePhoneActive) && (
+                                                {(isVideoSelected || isVideoHovered) && hasMedia && !isDraggingRotation && !imagePhoneActive && (
                                                     <div
                                                         className={`absolute -inset-px border pointer-events-none z-10 opacity-80 ${isVideoSelected ? 'border-blue-500' : 'border-white'}`}
                                                         style={{ borderRadius: `${roundedCorners + 1}px` }}
@@ -2042,7 +1945,7 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
                                                 transformStyle: mediaType === "image" && !apply3DToBackground ? 'preserve-3d' : undefined,
                                             }}
                                         >
-                                            <EditorHoverTooltip show={isVideoHovered && mediaType === "image"} />
+                                            <EditorHoverTooltip show={isVideoHovered && imagePhoneActive} />
                                         </div>
                                     </div>
                                 </div>
@@ -2114,45 +2017,8 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
                                     }}
                                 />
 
-                                {motionActive && (
-                                    <div
-                                        ref={phoneOverlayRef}
-                                        data-phone-overlay
-                                        className="absolute inset-0 flex items-center justify-center overflow-hidden"
-                                        style={{ zIndex: 150, isolation: "isolate" }}
-                                    >
-                                        {/* Scale wrapper — controlled by Ctrl+scroll */}
-                                        <div
-                                            style={{
-                                                transform: `scale(${motionZoomScale})`,
-                                                transformOrigin: "center center",
-                                                transition: "transform 0.08s ease-out",
-                                                willChange: "transform",
-                                            }}
-                                        >
-                                            <Phone3DViewer
-                                                imageUrl={motionImageUrl}
-                                                initialRotationX={0}
-                                                initialRotationY={0}
-                                                initialRotationZ={0}
-                                                shadowIntensity={0}
-                                                shadowColor="#000000"
-                                            />
-                                        </div>
-
-                                        {/* Ctrl+scroll hint — shown when zoom is at 100% */}
-                                        {motionZoomScale === 1 && !motionZoomVisible && (
-                                            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 pointer-events-none select-none opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <div className="text-white/30 text-[10px] font-normal whitespace-nowrap">
-                                                    Ctrl + scroll para zoom
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-
-                                {/* ── Image-mode phone overlay ── */}
-                                {mediaType === "image" && imagePhoneActive && (
+                                {/* ── 3D phone overlay (video & image mode) ── */}
+                                {imagePhoneActive && (
                                     <div
                                         className="absolute inset-0 pointer-events-none"
                                         style={{ zIndex: 155, overflow: "visible" }}
@@ -2177,7 +2043,7 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
                                                     pointerEvents: "none",
                                                 }}
                                             >
-                                                <EditorHoverTooltip show={isVideoHovered && mediaType === "image"} />
+                                                <EditorHoverTooltip show={isVideoHovered && imagePhoneActive} />
                                             </div>
                                         </div>
 
@@ -2189,14 +2055,12 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
                                             onMouseLeave={() => setIsVideoHovered(false)}
                                             onPointerDown={(e) => {
                                                 if (!onMockupClick) return;
-                                                if (mediaType !== "image" || !imagePhoneActive) return;
-                                                // Track click vs drag so the viewers' OrbitControls / drag
-                                                // system don't get mistaken for a click intent.
+                                                if (!imagePhoneActive) return;
                                                 clickStartPosRef.current = { x: e.clientX, y: e.clientY };
                                             }}
                                             onClick={(e) => {
                                                 if (!onMockupClick) return;
-                                                if (mediaType !== "image" || !imagePhoneActive) return;
+                                                if (!imagePhoneActive) return;
                                                 const start = clickStartPosRef.current;
                                                 clickStartPosRef.current = null;
                                                 if (!start) return;
@@ -2230,6 +2094,7 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
                                                 <Laptop3DViewer
                                                     key="laptop"
                                                     imageUrl={imageUrl}
+                                                    videoElement={mediaType === "video" ? videoRef.current : undefined}
                                                     openingProgress={imagePhoneOpening}
                                                     imageMaskConfig={imageMaskConfig}
                                                     cropArea={cropArea}
@@ -2255,6 +2120,7 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
                                                 <IPhone13ProMax3DViewer
                                                     key="iphone-13-pro-max"
                                                     imageUrl={imageUrl}
+                                                    videoElement={mediaType === "video" ? videoRef.current : undefined}
                                                     imageMaskConfig={imageMaskConfig}
                                                     cropArea={cropArea}
                                                     initialRotationX={imagePhoneRotX}
@@ -2279,6 +2145,7 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
                                                 <Phone3DViewer
                                                     key={imagePhoneDevice}
                                                     imageUrl={imageUrl}
+                                                    videoElement={mediaType === "video" ? videoRef.current : undefined}
                                                     imageMaskConfig={imageMaskConfig}
                                                     cropArea={cropArea}
                                                     initialRotationX={imagePhoneRotX}

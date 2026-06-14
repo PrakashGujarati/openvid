@@ -114,11 +114,6 @@ export function ZoomFragmentEditor({
                                 </button>
                             </div>
                         )}
-                        {!movementEnabled && (
-                            <span className="ml-auto font-mono text-[10px] text-white/30">
-                                {Math.round(fragment.focusX)}% · {Math.round(fragment.focusY)}%
-                            </span>
-                        )}
                     </div>
                     <div
                         ref={focusPreviewRef}

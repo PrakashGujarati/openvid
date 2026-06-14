@@ -88,6 +88,18 @@ export default function Editor() {
         clearHistory,
     } = useUndoRedo<EditorState>(createInitialEditorState());
 
+    const handleUndo = useCallback(() => {
+        undo();
+        setUndoRedoVersion(v => v + 1);
+    }, [undo]);
+
+    const handleRedo = useCallback(() => {
+        redo();
+        setUndoRedoVersion(v => v + 1);
+    }, [redo]);
+
+    const [undoRedoVersion, setUndoRedoVersion] = useState(-1);
+
     // Image state for photo mode
     const [imageUrl, setImageUrl] = useState<string | null>(null);
     const imageRef = useRef<HTMLImageElement>(null);
@@ -1086,8 +1098,17 @@ export default function Editor() {
         setEditorState
     ]);
 
-    // Sync editorState → individual states (from undo/redo)
+    // Sync editorState → individual states (only on actual undo/redo, not every state change)
+    // This effect restores all UI state when the user presses Ctrl+Z / Ctrl+Y.
+    // Without the version guard, it would also fire on every debounced state save,
+    // overwriting interactive values (like 3D rotation from OrbitControls drag)
+    // with stale snapshot data.
+    const prevUndoRedoVersionRef = useRef(undoRedoVersion);
     useEffect(() => {
+        // Only run when undoRedoVersion actually changed (undo/redo happened)
+        if (prevUndoRedoVersionRef.current === undoRedoVersion) return;
+        prevUndoRedoVersionRef.current = undoRedoVersion;
+
         setBackgroundTab(editorState.backgroundTab);
         setSelectedWallpaper(editorState.selectedWallpaper);
         setBackgroundBlur(editorState.backgroundBlur);
@@ -1126,7 +1147,7 @@ export default function Editor() {
         setImagePhoneOpening(editorState.imagePhoneOpening);
         setImagePhoneShadow(editorState.imagePhoneShadow);
         setImagePhoneShadowColor(editorState.imagePhoneShadowColor);
-    }, [editorState]);
+    }, [undoRedoVersion]);
 
     // Handler para cambiar el mockup
     const handleMockupChange = useCallback((newMockupId: string) => {
@@ -2163,7 +2184,7 @@ export default function Editor() {
             if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
                 e.preventDefault();
                 if (canUndo) {
-                    undo();
+                    handleUndo();
                 }
             }
 
@@ -2171,14 +2192,14 @@ export default function Editor() {
                 ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'z')) {
                 e.preventDefault();
                 if (canRedo) {
-                    redo();
+                    handleRedo();
                 }
             }
         };
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [undo, redo, canUndo, canRedo]);
+    }, [handleUndo, handleRedo, canUndo, canRedo]);
 
     // Keyboard listener for Ctrl+V image paste (photo mode only)
     useEffect(() => {
@@ -2587,6 +2608,12 @@ export default function Editor() {
                     setVideoDuration(duration);
                     setTrimRange(prev => prev.end === 0 ? { start: 0, end: duration } : prev);
                 }
+            }
+
+            const vw = videoRef.current.videoWidth;
+            const vh = videoRef.current.videoHeight;
+            if (vw > 0 && vh > 0) {
+                setVideoDimensions({ width: vw, height: vh });
             }
         }
     }, []);
@@ -3012,7 +3039,7 @@ export default function Editor() {
                                         videoThumbnail={selectedZoomFragment ? getThumbnailForTime(selectedZoomFragment.startTime)?.dataUrl ?? null : null}
                                         currentTime={currentTime}
                                         getThumbnailForTime={getThumbnailForTime}
-                                        videoDimensions={customAspectRatio}
+                                        videoDimensions={videoDimensions}
                                         mockupId={mockupId}
                                         mockupConfig={mockupConfig}
                                         onMockupChange={handleMockupChange}
@@ -3097,8 +3124,8 @@ export default function Editor() {
                                 onExport={handleExport}
                                 exportProgress={exportProgress}
                                 hasTransparentBackground={selectedWallpaper === -1}
-                                onUndo={undo}
-                                onRedo={redo}
+                                onUndo={handleUndo}
+                                onRedo={handleRedo}
                                 canUndo={canUndo}
                                 canRedo={canRedo}
                                 editorMode={editorMode}

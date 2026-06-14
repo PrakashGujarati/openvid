@@ -94,7 +94,7 @@ export function ExportDropdown({ onExport, exportProgress, hasTransparentBackgro
           <Icon icon="mdi:chevron-down" width="16" className="opacity-50" aria-hidden="true" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-72 bg-[#1C1C1F] border-white/10 text-white shadow-2xl p-0 overflow-hidden">
+      <PopoverContent align="end" className="w-72 bg-[#1C1C1F] border-white/10 text-white shadow-2xl p-0 overflow-hidden z-999999">
         <div className="flex flex-col bg-black border border-white/10 rounded-xl overflow-hidden shadow-2xl">
           <div className="px-4 py-3 border-b border-white/10 bg-white/5">
             <span className="text-[10px] font-medium uppercase tracking-[0.15em] text-white/50">

@@ -89,22 +89,34 @@ function PositionPad({
           <div className="absolute inset-0 pointer-events-none rounded-[14px] ring-2 ring-cyan-400/30 animate-pulse" />
         )}
         <div className="absolute inset-0 pointer-events-none opacity-10 bg-[radial-gradient(#a1a1aa_1px,transparent_1px)] bg-size-[14px_14px]" />
-        <div className="absolute top-0 bottom-0 w-px bg-gradient-to-b from-transparent via-white/10 to-transparent" style={{ left: "50%" }} />
-        <div className="absolute left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" style={{ top: "50%" }} />
-        <div className="absolute pointer-events-none bg-white/5 transition-opacity" style={{ left: `calc(${pctX * 100}%)`, top: 0, bottom: 0, width: 1 }} />
-        <div className="absolute pointer-events-none bg-white/5 transition-opacity" style={{ top: hy, left: 0, right: 0, height: 1 }} />
+
+        <div className="absolute top-0 bottom-0 w-px bg-linear-to-b from-transparent via-white/10 to-transparent -translate-x-1/2" style={{ left: "50%" }} />
+        <div className="absolute left-0 right-0 h-px bg-linear-to-r from-transparent via-white/10 to-transparent -translate-y-1/2" style={{ top: "50%" }} />
+
         <div
-          className={`absolute bg-white border border-white/40 rounded-full shadow-[0_0_20px_4px_rgba(255,255,255,0.12),0_4px_12px_rgba(0,0,0,0.6)] mix-blend-screen flex items-center justify-center transition-all duration-75 pointer-events-auto ${isDraggingState ? "cursor-grabbing scale-125" : "cursor-grab"
-            }`}
+          className="absolute pointer-events-none bg-white/10 transition-opacity -translate-x-1/2"
+          style={{ left: `${pctX * 100}%`, top: 0, bottom: 0, width: '1px' }}
+        />
+
+        <div
+          className="absolute pointer-events-none bg-white/10 transition-opacity -translate-y-1/2"
+          style={{ top: hy, left: 0, right: 0, height: '1px' }}
+        />
+
+        <div
+          className={`absolute bg-white border border-white/40 rounded-full shadow-[0_0_20px_4px_rgba(255,255,255,0.12),0_4px_12px_rgba(0,0,0,0.6)] mix-blend-screen flex items-center justify-center pointer-events-auto transition-transform duration-75`}
           style={{
             width: HANDLE_R * 3,
             height: HANDLE_R * 3,
-            left: `calc(${pctX * 100}% - ${HANDLE_R}px)`,
-            top: hy - HANDLE_R,
+            left: `${pctX * 100}%`,
+            top: hy,
+            transform: `translate(-50%, -50%) ${isDraggingState ? "scale(1.25)" : "scale(1)"}`,
+            cursor: isDraggingState ? "grabbing" : "grab",
           }}
         />
       </div>
     </div>
+
   );
 }
 
