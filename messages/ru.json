@@ -583,6 +583,17 @@
     "none": "Нет",
     "suggested": "Рекомендуемые",
     "count": "{count} мокапов",
+    "remove": "Удалить мокап",
+    "frames2D": "2D-рамки",
+    "devices3D": "3D-устройства",
+    "device3DTitle": "3D-устройство",
+    "configuration": "Настройки",
+    "reset": "Сбросить",
+    "scale": "Масштаб",
+    "laptopOpening": "Открытие ноутбука",
+    "shadow": "Тень",
+    "position": "Позиция",
+    "removeFrame": "Убрать рамку",
     "darkMode": {
       "label": "Тёмная тема",
       "dark": "Тёмная",
@@ -599,8 +610,7 @@
     "sliders": {
       "headerScale": "Масштаб заголовка",
       "headerOpacity": "Прозрачность заголовка"
-    },
-    "remove": "Удалить мокап"
+    }
   },
   "videosMenu": {
     "title": "Видео",
@@ -1117,5 +1127,67 @@
     "loggingOut": "Выход...",
     "ariaLabel": "Меню пользователя",
     "defaultUser": "Пользователь"
+  },
+  "featuresShowcase": {
+    "common": {
+      "videoThumbnail": "Миниатюра видео"
+    },
+    "videos": {
+      "titleLine1": "Отполированные видеодемо",
+      "titleLine2": "созданы.",
+      "description": "Смотрите реалистичные записи экрана и кинематографичные клипы, созданные нашим сообществом."
+    },
+    "images": {
+      "titleLine1": "Отполированные изображения",
+      "titleLine2": "статические экспорты.",
+      "description": "Подходит для лендингов, соцсетей и журналов изменений. Экспортируйте сверхчеткие мокапы в один клик."
+    },
+    "alts": {
+      "laptop": "Ноутбук",
+      "iphone": "iPhone",
+      "browser": "Браузер"
+    }
+  },
+  "featuresGrid": {
+    "ariaLabel": "Особенности продукта",
+    "titleLine1": "Всё, что нужно, чтобы выпускать",
+    "titleLine2": "потрясающие демо.",
+    "description": "Записывайте, улучшайте и экспортируйте — кинематографичный результат прямо в браузере, без установки.",
+    "cards": {
+      "deviceMockups": {
+        "title": "3D-макеты устройств",
+        "description": "Оформляйте записи экрана в гиперреалистичные 3D-рамки устройств."
+      },
+      "transparency": {
+        "title": "Прозрачность"
+      },
+      "backgrounds": {
+        "title": "Фоны"
+      },
+      "cinematicZoom": {
+        "title": "Кинематографичный зум"
+      },
+      "elementsLayers": {
+        "title": "Элементы и слои"
+      },
+      "multiTrackTimeline": {
+        "title": "Многодорожечная шкала времени",
+        "description": "Слойте несколько видео, аудиодорожек и масштабируйте холст."
+      }
+    },
+    "alts": {
+      "abstract3dRendering": "Абстрактный 3D-рендер",
+      "backgroundLayer3": "Фоновый слой 3",
+      "backgroundLayer2": "Фоновый слой 2",
+      "transparentPreview": "Прозрачный предпросмотр",
+      "backgroundPattern": "Фоновый узор",
+      "bottomRightAsset": "Элемент внизу справа",
+      "rightAsset": "Правый элемент"
+    },
+    "tags": {
+      "textOverlay": "Текстовая надпись",
+      "svgShapes": "SVG-фигуры",
+      "blurEffects": "Эффекты размытия"
+    }
   }
 }
