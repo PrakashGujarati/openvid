@@ -82,54 +82,57 @@ export function getMockupDefaultConfig(mockup: Mockup | undefined): MockupConfig
 
 export type ImageDeviceId = (typeof IMAGE_DEVICE_TEMPLATES)[number]["id"];
 
-// ─── PositionPad ─────────────────────────────────────────────────────────────
-
 export const PAD_H = 130;
 export const X_HALF = 500;
 export const Y_HALF = 500;
 export const HANDLE_R = 9;
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
 export type MenuPage = "home" | "detail-2d" | "detail-3d";
 
-// ─── 3D Device definitions ────────────────────────────────────────────────────
-
 export const IMAGE_DEVICE_TEMPLATES = [
-    {
-        id: "iphone-13-pro-max",
-        title: "iPhone 13 Pro",
-        accentColor: "#7C7C85",
-        icon: "simple-icons:apple",
-        modelUrl: "/models/apple_iphone_13_pro_max.glb",
-    },
-    {
-        id: "iphone",
-        title: "iPhone 15 Pro",
-        accentColor: "#A8A8B0",
-        icon: "simple-icons:apple",
-        modelUrl: "/models/iphone-15-pro-max.glb",
-    },
-    {
-        id: "samsung",
-        title: "Samsung S25",
-        accentColor: "#1428A0",
-        icon: "simple-icons:samsung",
-        modelUrl: "/models/samsung-galaxy-s25-ultra.glb",
-    },
-    {
-        id: "phone",
-        title: "Phone",
-        accentColor: "#00A3FF",
-        icon: "ph:device-mobile-bold",
-        modelUrl: "/models/phone-gltf.glb",
-    },
-    {
-        id: "laptop",
-        title: "macOS Laptop",
-        accentColor: "#CECFD3",
-        icon: "ph:laptop-bold",
-        modelUrl: "/models/mac-book.glb",
-    },
+  {
+    id: "iphone-13-pro-max",
+    title: "iPhone 13 Pro",
+    accentColor: "#7C7C85",
+    icon: "simple-icons:apple",
+    modelUrl: "/models/apple_iphone_13_pro_max.glb",
+    posterUrl: encodeURI("/images/mockups-3d/iphone-13pro.avif"),
+    videoUrl: encodeURI("/videos/mockups-3d/iphone-13pro.mp4"),
+  },
+  {
+    id: "iphone",
+    title: "iPhone 15 Pro",
+    accentColor: "#A8A8B0",
+    icon: "simple-icons:apple",
+    modelUrl: "/models/iphone-15-pro-max.glb",
+    posterUrl: encodeURI("/images/mockups-3d/iphone-15pro.avif"),
+    videoUrl: encodeURI("/videos/mockups-3d/iphone-15pro.mp4"),
+  },
+  {
+    id: "samsung",
+    title: "Samsung S25",
+    accentColor: "#1428A0",
+    icon: "simple-icons:samsung",
+    modelUrl: "/models/samsung-galaxy-s25-ultra.glb",
+    posterUrl: encodeURI("/images/mockups-3d/sansung-s25.avif"),
+    videoUrl: encodeURI("/videos/mockups-3d/sansung-s25.mp4"),
+  },
+  {
+    id: "phone",
+    title: "Phone",
+    accentColor: "#00A3FF",
+    icon: "lineicons:phone",
+    modelUrl: "/models/phone-gltf.glb",
+    posterUrl: encodeURI("/images/mockups-3d/phone.avif"),
+    videoUrl: encodeURI("/videos/mockups-3d/phone.mp4"),
+  },
+  {
+    id: "laptop",
+    title: "macOS Laptop",
+    accentColor: "#CECFD3",
+    icon: "ph:laptop-bold",
+    modelUrl: "/models/mac-book.glb",
+    posterUrl: encodeURI("/images/mockups-3d/macos-laptop.avif"),
+    videoUrl: encodeURI("/videos/mockups-3d/macos-laptop.mp4"),
+  },
 ] as const;
-
