@@ -1,6 +1,7 @@
 "use client";
 
-import { useRef, useEffect, useImperativeHandle, forwardRef, useMemo, useState } from "react";
+import { useRef, useEffect, useImperativeHandle, forwardRef, useMemo, useState, useCallback, memo } from "react";
+import dynamic from "next/dynamic";
 import type { VideoCanvasHandle, VideoCanvasProps, VideoThumbnail } from "@/types";
 import type { ImageElement, SvgElement } from "@/types/canvas-elements.types";
 import { getCameraLayout } from "@/types/camera.types";
@@ -23,9 +24,28 @@ import { EditorHoverTooltip } from "./EditorHoverTooltip";
 import DropImage from "@/components/ui/DropImage";
 import { LayersPanel } from "./LayersPanel";
 import { Icon } from "@iconify/react";
+import { useMockup3dContext } from "@/app/contexts/Mockup3dContext";
+import { PHONE_H, PHONE_W, DEVICE_3D_DIMENSIONS } from "@/lib/phone3d.utils";
+
 export type { VideoCanvasHandle, VideoCanvasProps };
 
-export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(function VideoCanvas({
+const Phone3DViewer = dynamic(
+    () => import("./Phone3DViewer").then((m) => ({ default: m.Phone3DViewer })),
+    { ssr: false }
+);
+
+const Laptop3DViewer = dynamic(
+    () => import("./Laptop3DViewer").then((m) => ({ default: m.Laptop3DViewer })),
+    { ssr: false }
+);
+
+const IPhone13ProMax3DViewer = dynamic(
+    () => import("./IPhone13ProMax3DViewer").then((m) => ({ default: m.IPhone13ProMax3DViewer })),
+    { ssr: false }
+);
+
+const VideoCanvasInner = forwardRef<VideoCanvasHandle, VideoCanvasProps>(function VideoCanvas({
+    activeTool: _activeTool,
     mediaType = "video",
     imageUrl = null,
     imageRef,
@@ -76,10 +96,59 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
     textToolActive = false,
     onTextToolDeactivate,
     onAddElement,
+    onMockupClick,
 }, ref) {
     const wallpaperUrl = getWallpaperUrl(selectedWallpaper);
 
     const hasMedia = mediaType === "video" ? !!videoUrl : !!imageUrl;
+
+    // Motion 3D phone overlay state (reads from shared MotionContext)
+    const {
+        imagePhoneActive, imagePhoneX, imagePhoneY,
+        imagePhoneScale, setImagePhoneScale,
+        imagePhoneRotX, setImagePhoneRotX, imagePhoneRotY, setImagePhoneRotY,
+        imagePhoneRotZ,
+        imagePhoneDevice, imagePhonePresetId,
+        imagePhoneOpening,
+        imagePhoneShadow, imagePhoneShadowColor
+    } = useMockup3dContext();
+    // 3D phone overlay is active in both video and image mode
+    // Añadir FUERA del JSX de VideoCanvas, junto a los otros useCallback:
+    const handlePhoneMount = useCallback((canvas: HTMLCanvasElement) => {
+        imagePhoneCanvasRef.current = canvas;
+    }, []);
+
+    const handlePhoneApi = useCallback((api: typeof imagePhoneApiRef.current) => {
+        imagePhoneApiRef.current = api;
+    }, []);
+
+    const handlePhoneRotationChange = useCallback((rx: number, ry: number) => {
+        setImagePhoneRotX(rx);
+        setImagePhoneRotY(ry);
+    }, [setImagePhoneRotX, setImagePhoneRotY]);
+    // Ctrl+scroll zoom badge state for image phone overlay
+    const [imagePhoneZoomVisible, setImagePhoneZoomVisible] = useState(false);
+    const imagePhoneZoomTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    // Ref for the non-passive Ctrl+scroll wheel handler (React's onWheel is always passive).
+    // Updated each render so the closure always has the latest state values.
+    const ctrlScrollWheelRef = useRef<((e: WheelEvent) => void) | null>(null);
+    // WebGL canvas from image phone Phone3DViewer, captured via onMount prop for export
+    const imagePhoneCanvasRef = useRef<HTMLCanvasElement | null>(null);
+    const imagePhoneApiRef = useRef<{ renderAt: (w: number, h: number) => void; restorePreview: () => void; hasBuiltInShadow?: boolean } | null>(null);
+    const [activePhoneDevice, setActivePhoneDevice] = useState<string | null>(null);
+    const [phoneTransitioning, setPhoneTransitioning] = useState(false);
+    const rafDragRef = useRef<number | null>(null);
+    const pendingUpdateRef = useRef<{ id: string; x: number; y: number } | null>(null);
+
+    // Model URL for the active device
+    const PHONE_DEVICE_URLS: Record<string, string | undefined> = {
+        phone: '/models/phone-gltf.glb',
+        iphone: '/models/iphone-15-pro-max.glb',
+        'iphone-13-pro-max': '/models/apple_iphone_13_pro_max.glb',
+        samsung: '/models/samsung-galaxy-s25-ultra.glb',
+        laptop: '/models/mac-book.glb',
+    };
+    const imagePhoneModelUrl = PHONE_DEVICE_URLS[imagePhoneDevice];
 
     // Get current thumbnail for scrubbing preview
     const currentThumbnail = useMemo<VideoThumbnail | null>(() => {
@@ -140,6 +209,7 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
     const shouldShowCustomColor = backgroundTab === "color" && !!backgroundColorCss;
 
     const exportCanvasRef = useRef<HTMLCanvasElement>(null);
+    const phoneOverlayRef = useRef<HTMLDivElement>(null);
     // Foreground canvas — used to render the mockup in isolation so that the
     // WebGL 3D perspective is applied only to the mockup, not to the background.
     const foregroundCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -222,12 +292,36 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
     const dragStartPos = useRef({ x: 0, y: 0, initialRotation: 0, initialTranslateX: 0, initialTranslateY: 0 });
     const lastAngleRef = useRef<number | null>(null);
     const videoContainerRef = useRef<HTMLDivElement>(null);
+    // Click vs drag detection for the 2D mockup canvas: we record the
+    // pointer-down position and only fire onMockupClick if the pointer
+    // stayed within CLICK_THRESHOLD pixels (i.e. it was a click, not a drag).
+    const clickStartPosRef = useRef<{ x: number; y: number } | null>(null);
+    const CLICK_THRESHOLD = 5; // px
     const [elementCorners, setElementCorners] = useState<Record<string, Corner | null>>({});
 
     // Camera overlay refs / state
     const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
     const previewContainerRef = useRef<HTMLDivElement>(null);
     const canvasWrapperRef = useRef<HTMLDivElement>(null);
+
+    ctrlScrollWheelRef.current = (e: WheelEvent) => {
+        if (!e.ctrlKey || !imagePhoneActive) return;
+        e.preventDefault();
+        const next = Math.max(0.3, Math.min(3, imagePhoneScale * (e.deltaY < 0 ? 1.05 : 0.95)));
+        setImagePhoneScale(next);
+        setImagePhoneZoomVisible(true);
+        if (imagePhoneZoomTimerRef.current) clearTimeout(imagePhoneZoomTimerRef.current);
+        imagePhoneZoomTimerRef.current = setTimeout(() => setImagePhoneZoomVisible(false), 1200);
+    };
+    useEffect(() => {
+        const el = previewContainerRef.current;
+        if (!el) return;
+        // Stable wrapper delegates to the always-fresh ref
+        const handler = (e: WheelEvent) => ctrlScrollWheelRef.current?.(e);
+        el.addEventListener('wheel', handler, { passive: false });
+        return () => el.removeEventListener('wheel', handler);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []); // attach once — ctrlScrollWheelRef.current updated each render
 
     // Compute canvas dimensions to fill available space while maintaining aspect ratio
     const [canvasDimensions, setCanvasDimensions] = useState<{ width: number; height: number } | null>(null);
@@ -259,6 +353,26 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
 
         return () => observer.disconnect();
     }, [aspectRatio, customAspectRatio]);
+
+
+    const phoneCalibrationWidthRef = useRef<number>(canvasDimensions?.width ?? 0);
+    useEffect(() => {
+        if (canvasDimensions?.width) {
+            phoneCalibrationWidthRef.current = canvasDimensions.width;
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [imagePhoneX, imagePhoneY, imagePhoneScale]);
+
+    const phoneCanvasScaleFactor = (canvasDimensions?.width && phoneCalibrationWidthRef.current)
+        ? canvasDimensions.width / phoneCalibrationWidthRef.current
+        : 1;
+
+    // Usar SIEMPRE estos valores para posicionar/dimensionar el mockup 3D —
+    // nunca imagePhoneX/Y/Scale crudos, excepto dentro del cálculo que llama
+    // a setImagePhoneScale() (ese debe leer el valor real almacenado).
+    const effectiveImagePhoneX = imagePhoneX * phoneCanvasScaleFactor;
+    const effectiveImagePhoneY = imagePhoneY * phoneCanvasScaleFactor;
+    const effectiveImagePhoneScale = imagePhoneScale * phoneCanvasScaleFactor;
 
     const cameraDragRef = useRef<{
         pointerId: number;
@@ -324,7 +438,6 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
         return () => window.removeEventListener("pointerdown", close);
     }, [!!canvasCtxMenu]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // Calculate mask styles — selects video or image mask based on mediaType
     const maskStyles = useMemo(() => {
         const config = mediaType === "video" ? videoMaskConfig : imageMaskConfig;
         if (!config || !config.enabled) return {};
@@ -362,7 +475,6 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
     const elementImagesRef = useRef<Map<string, HTMLImageElement>>(new Map());
     const svgImageCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
 
-    // Actualizar canvas dimensions cuando cambia el aspect ratio
     useEffect(() => {
         const canvas = exportCanvasRef.current;
         if (canvas) {
@@ -371,7 +483,6 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
         }
     }, [exportDimensions]);
 
-    // Precargar imagen de wallpaper para el canvas
     useEffect(() => {
         if (shouldShowWallpaper && wallpaperUrl) {
             const img = new Image();
@@ -399,7 +510,25 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
         }
     }, [imageUrlToLoad]);
 
-    // Preload canvas element images (only for image elements, not SVGs)
+
+    useEffect(() => {
+        if (!imagePhoneActive) {
+            setActivePhoneDevice(null);
+            return;
+        }
+        if (imagePhoneDevice === activePhoneDevice) return;
+
+        setPhoneTransitioning(true);
+        setActivePhoneDevice(null);
+
+        const id = setTimeout(() => {
+            setActivePhoneDevice(imagePhoneDevice);
+            setPhoneTransitioning(false);
+        }, 50);
+
+        return () => clearTimeout(id);
+    }, [imagePhoneDevice, imagePhoneActive]);
+
     useEffect(() => {
         const cache = elementImagesRef.current;
         const loadedPaths = new Set(cache.keys());
@@ -482,7 +611,13 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
                     guides.horizontal.push(50);
                 }
 
-                setMockupAlignmentGuides(guides);
+                if (
+                    guides.vertical.length !== alignmentGuides.vertical.length ||
+                    guides.horizontal.length !== alignmentGuides.horizontal.length
+                ) {
+                    setMockupAlignmentGuides(guides);
+
+                }
 
                 onVideoTransformChange({
                     ...videoTransform,
@@ -643,24 +778,46 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
                         guides.horizontal.push(centerY);
                     }
 
-                    setAlignmentGuides(guides);
+                    if (
+                        guides.vertical.length !== alignmentGuides.vertical.length ||
+                        guides.horizontal.length !== alignmentGuides.horizontal.length
+                    ) {
+                        setAlignmentGuides(guides);
+                    }
 
-                    onElementUpdate(selectedElementId, {
-                        x: newX,
-                        y: newY,
-                    });
+                    pendingUpdateRef.current = { id: selectedElementId, x: newX, y: newY };
+                    if (!rafDragRef.current) {
+                        rafDragRef.current = requestAnimationFrame(() => {
+                            const pending = pendingUpdateRef.current;
+                            if (pending && onElementUpdate) {
+                                onElementUpdate(pending.id, { x: pending.x, y: pending.y });
+                            }
+                            rafDragRef.current = null;
+                        });
+                    }
                 }
             }
         };
 
         const handleMouseUp = () => {
-            // If the mouse barely moved: treat as a click → collapse multi-selection to the clicked element
             if (pendingCollapseRef.current && !wasDragRef.current) {
                 const id = pendingCollapseRef.current;
                 setCanvasSelectedIds([id]);
             }
             pendingCollapseRef.current = null;
             wasDragRef.current = false;
+
+            // Flush any pending RAF update antes de limpiar estado
+            if (rafDragRef.current) {
+                cancelAnimationFrame(rafDragRef.current);
+                rafDragRef.current = null;
+                if (pendingUpdateRef.current && onElementUpdate) {
+                    const { id, x, y } = pendingUpdateRef.current;
+                    onElementUpdate(id, { x, y });
+                }
+                pendingUpdateRef.current = null;
+            }
+
             setIsDraggingElement(false);
             setIsDraggingElementRotation(false);
             setAlignmentGuides({ vertical: [], horizontal: [] });
@@ -858,7 +1015,7 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
     };
 
     // Function to draw a frame on the export canvas
-    const drawFrame = async () => {
+    const drawFrame = async (highQuality: boolean = true) => {
         const canvas = exportCanvasRef.current;
         const canvasCtxOptions: CanvasRenderingContext2DSettings = { alpha: true, colorSpace: 'srgb', desynchronized: false, willReadFrequently: false };
         const ctx = canvas?.getContext('2d', canvasCtxOptions);
@@ -1050,8 +1207,54 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
             drawBg(ctx);
             await renderCanvasElements(ctx, canvasElements, canvasWidth, canvasHeight, true);
             const { containerX: cX, containerY: cY, containerWidth: cW, containerHeight: cH } = computeContainer();
-            drawMockupAndMedia(ctx, cX, cY, cW, cH, image!, true);
+            // Only draw the 2D mockup + media when the 3D phone overlay is NOT active.
+            // In the preview, CSS opacity:0 hides the video layer; here we skip drawing it.
+            if (!imagePhoneActive) {
+                drawMockupAndMedia(ctx, cX, cY, cW, cH, image!, true);
+            }
             await renderCanvasElements(ctx, canvasElements, canvasWidth, canvasHeight, false);
+            // ── Composite image phone mockup (WebGL snapshot) onto export canvas ──
+            if (imagePhoneActive && imagePhoneCanvasRef.current) {
+                const phoneGL = imagePhoneCanvasRef.current;
+                const domW = canvasDimensions?.width ?? canvasWidth;
+                const pxScale = canvasWidth / domW;
+                const phoneCx = canvasWidth / 2 + effectiveImagePhoneX * pxScale;
+                const phoneCy = canvasHeight / 2 + effectiveImagePhoneY * pxScale;
+                // Use device-specific dimensions instead of generic PHONE_W/H
+                const deviceDims = DEVICE_3D_DIMENSIONS[imagePhoneDevice] ?? { width: PHONE_W, height: PHONE_H };
+                const drawW = deviceDims.width * effectiveImagePhoneScale * pxScale;
+                const drawH = deviceDims.height * effectiveImagePhoneScale * pxScale;
+                // Paint CSS-shadow replica as a 2D radial gradient underneath the model,
+                // but only for devices whose 3D viewer doesn't already render ContactShadows.
+                const hasBuiltInShadow = imagePhoneApiRef.current?.hasBuiltInShadow ?? false;
+                if (imagePhoneShadow > 0.01 && !hasBuiltInShadow) {
+                    const sT = imagePhoneShadow * imagePhoneShadow;
+                    const sBlur = sT * 60;
+                    const sOpacity = sT * 0.7;
+                    const shadowEllipseW = drawW * (0.6 - sT * 0.1);
+                    const shadowEllipseH = Math.max(4, sBlur * 0.55) * pxScale;
+                    const shadowCenterY = phoneCy + drawH / 2 + sBlur * 0.2 * pxScale;
+                    ctx.save();
+                    ctx.globalAlpha = sOpacity;
+                    ctx.filter = `blur(${Math.max(2, sBlur * 0.6) * pxScale}px)`;
+                    ctx.beginPath();
+                    ctx.ellipse(phoneCx, shadowCenterY, shadowEllipseW / 2, shadowEllipseH / 2, 0, 0, Math.PI * 2);
+                    ctx.fillStyle = imagePhoneShadowColor;
+                    ctx.fill();
+                    ctx.restore();
+                }
+                if (highQuality) {
+                    // Solo para exportación real — redimensionar el canvas WebGL EN VIVO
+                    // causa una carrera con el compositor del navegador.
+                    imagePhoneApiRef.current?.renderAt(drawW, drawH);
+                    ctx.drawImage(phoneGL, phoneCx - drawW / 2, phoneCy - drawH / 2, drawW, drawH);
+                    imagePhoneApiRef.current?.restorePreview();
+                } else {
+                    // Liviano: escala lo que ya está renderizado en el canvas en vivo.
+                    // Nunca toca la resolución del canvas visible.
+                    ctx.drawImage(phoneGL, phoneCx - drawW / 2, phoneCy - drawH / 2, drawW, drawH);
+                }
+            }
             ctx.restore();
             return;
         }
@@ -1127,21 +1330,22 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
         await renderCanvasElements(ctx, canvasElements, canvasWidth, canvasHeight, true);
         ctx.restore();
 
+        await drawCameraOverlay(ctx, canvasWidth, canvasHeight);
+
         const { containerX, containerY, containerWidth, containerHeight } = computeContainer();
 
         if (has3DEffect && fgCanvas && fgCtx) {
             fgCtx.save();
             fgCtx.translate(fgOffsetX, fgOffsetY);
-            drawMockupAndMedia(fgCtx, containerX, containerY, containerWidth, containerHeight, video!, false);
+            if (!imagePhoneActive) {
+                drawMockupAndMedia(fgCtx, containerX, containerY, containerWidth, containerHeight, video!, false);
+            }
+            if (imagePhoneActive && imagePhoneCanvasRef.current) {
+                drawPhone3DCompositeWithZoom(ctx, canvasWidth, canvasHeight, frameTime, zoomState, highQuality);
+
+            }
             fgCtx.restore();
-
-            applyPerspective3D(
-                fgCanvas,
-                zoomState.rotateX,
-                zoomState.rotateY,
-                zoomState.perspective * BLEED_FACTOR
-            );
-
+            applyPerspective3D(fgCanvas, zoomState.rotateX, zoomState.rotateY, zoomState.perspective * BLEED_FACTOR);
             ctx.save();
             applyVideoZoom(ctx);
             ctx.drawImage(fgCanvas, -fgOffsetX, -fgOffsetY, fgWidth, fgHeight);
@@ -1161,7 +1365,9 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
                 if (vlCtx) {
                     vlCtx.imageSmoothingEnabled = true;
                     vlCtx.imageSmoothingQuality = 'high';
-                    drawMockupAndMedia(vlCtx, containerX, containerY, containerWidth, containerHeight, video!, false);
+                    if (!imagePhoneActive) {
+                        drawMockupAndMedia(vlCtx, containerX, containerY, containerWidth, containerHeight, video!, false);
+                    }
 
                     vlCtx.globalCompositeOperation = 'destination-in';
                     const vm = videoMaskConfig!;
@@ -1221,11 +1427,23 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
                     ctx.drawImage(videoLayer, 0, 0);
                     ctx.restore();
                 }
+                if (imagePhoneActive && imagePhoneCanvasRef.current) {
+                    drawPhone3DCompositeWithZoom(ctx, canvasWidth, canvasHeight, frameTime, zoomState, highQuality);
+
+                }
+
             } else {
                 ctx.save();
                 applyVideoZoom(ctx);
-                drawMockupAndMedia(ctx, containerX, containerY, containerWidth, containerHeight, video!, false);
+                if (!imagePhoneActive) {
+                    drawMockupAndMedia(ctx, containerX, containerY, containerWidth, containerHeight, video!, false);
+                }
                 ctx.restore();
+
+                if (imagePhoneActive && imagePhoneCanvasRef.current) {
+                    drawPhone3DCompositeWithZoom(ctx, canvasWidth, canvasHeight, frameTime, zoomState, highQuality);
+
+                }
             }
         }
 
@@ -1235,6 +1453,64 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
         ctx.restore();
 
         await drawCameraOverlay(ctx, canvasWidth, canvasHeight);
+    };
+
+    const drawPhone3DCompositeWithZoom = (
+        c: CanvasRenderingContext2D,
+        canvasWidth: number,
+        canvasHeight: number,
+        _frameTime: number,
+        zs: { scale: number; focusX: number; focusY: number },
+        highQuality: boolean,
+    ) => {
+        const phoneGL = imagePhoneCanvasRef.current!;
+        const domW = canvasDimensions?.width ?? canvasWidth;
+        const pxScale = canvasWidth / domW;
+
+        const zScale = zs.scale;
+        const focusPxX = (zs.focusX / 100) * canvasWidth;
+        const focusPxY = (zs.focusY / 100) * canvasHeight;
+        const centerX = canvasWidth / 2;
+        const centerY = canvasHeight / 2;
+
+        const baseCx = centerX + effectiveImagePhoneX * pxScale;
+        const baseCy = centerY + effectiveImagePhoneY * pxScale;
+
+        const phoneCx = (baseCx - focusPxX) * zScale + centerX;
+        const phoneCy = (baseCy - focusPxY) * zScale + centerY;
+
+        const deviceDims = DEVICE_3D_DIMENSIONS[imagePhoneDevice] ?? { width: PHONE_W, height: PHONE_H };
+        const drawW = deviceDims.width * effectiveImagePhoneScale * pxScale * zScale;
+        const drawH = deviceDims.height * effectiveImagePhoneScale * pxScale * zScale;
+
+        const hasBuiltInShadow = imagePhoneApiRef.current?.hasBuiltInShadow ?? false;
+        if (imagePhoneShadow > 0.01 && !hasBuiltInShadow) {
+            const sT = imagePhoneShadow * imagePhoneShadow;
+            const sBlur = sT * 60;
+            const sOpacity = sT * 0.7;
+            c.save();
+            c.globalAlpha = sOpacity;
+            c.filter = `blur(${Math.max(2, sBlur * 0.6) * pxScale}px)`;
+            c.beginPath();
+            c.ellipse(
+                phoneCx,
+                phoneCy + drawH / 2 + sBlur * 0.2 * pxScale,
+                drawW * (0.6 - sT * 0.1) / 2,
+                Math.max(4, sBlur * 0.55) * pxScale / 2,
+                0, 0, Math.PI * 2
+            );
+            c.fillStyle = imagePhoneShadowColor;
+            c.fill();
+            c.restore();
+        }
+
+        if (highQuality) {
+            imagePhoneApiRef.current?.renderAt(drawW, drawH);
+            c.drawImage(phoneGL, phoneCx - drawW / 2, phoneCy - drawH / 2, drawW, drawH);
+            imagePhoneApiRef.current?.restorePreview();
+        } else {
+            c.drawImage(phoneGL, phoneCx - drawW / 2, phoneCy - drawH / 2, drawW, drawH);
+        }
     };
 
     const drawCameraOverlay = async (
@@ -1256,7 +1532,7 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
                     camVideo.currentTime = targetTime;
 
                     await new Promise<void>((resolve) => {
-         
+
                         const timeoutId = setTimeout(() => {
                             camVideo.removeEventListener("seeked", onSeeked);
                             resolve();
@@ -1348,7 +1624,6 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
             }
         }
         ctx.restore();
-
     };
 
     useImperativeHandle(ref, () => ({
@@ -1487,10 +1762,10 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
             <div className="flex items-stretch min-h-0 min-w-0 w-full h-full justify-center gap-0">
 
                 {/* Preview visual - contenedor con tamaño dinámico según aspect ratio */}
-                <div ref={canvasWrapperRef} className="flex-1 flex items-center justify-center min-h-0 min-w-0 mx-4">
+                <div ref={canvasWrapperRef} className="flex-1 flex items-center justify-center min-h-0 min-w-0 mr-1">
                     <div
                         ref={previewContainerRef}
-                        className={`relative shrink-0 overflow-hidden transition-all duration-300 ${mediaType === "image" && imageUrl
+                        className={`relative shrink-0 transition-all duration-300 overflow-hidden ${mediaType === "image" && imageUrl
                             ? ""
                             : "border border-white/20 rounded-xl"
                             }`}
@@ -1501,12 +1776,15 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
                                 : { width: '100%', height: 'auto', maxHeight: '100%' }
                             ),
                             containerType: 'size',
+
                         }}
                         onClick={(e) => {
                             if (
                                 !(e.target as HTMLElement).closest('[data-canvas-element]') &&
                                 !(e.target as HTMLElement).closest('[data-camera-overlay]') &&
-                                !(e.target as HTMLElement).closest('[data-video-container]')
+                                !(e.target as HTMLElement).closest('[data-video-container]') &&
+                                !(e.target as HTMLElement).closest('[data-phone-overlay]') &&
+                                !(e.target as HTMLElement).closest('[data-image-phone-overlay]')
                             ) {
                                 if (onElementSelect) onElementSelect(null);
                                 setIsVideoSelected(false);
@@ -1519,6 +1797,9 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
                             style={{
                                 perspective: mediaType === "image" && imageTransform && apply3DToBackground ? `${imageTransform.perspective || 600}px` : 'none',
                                 perspectiveOrigin: 'center center',
+                                // Propagate overflow:visible so the 3D phone overlay in image mode
+                                // is never clipped when the user rotates or drags it outside bounds.
+                                overflow: 'hidden',
                             }}
                         >
                             {!(mediaType === "image" && apply3DToBackground) && (
@@ -1539,6 +1820,8 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
                                     transition: mediaType === "image" && apply3DToBackground
                                         ? 'transform 300ms cubic-bezier(0.25, 0.46, 0.45, 0.94)'
                                         : zoomTransform.isMoving ? `transform ${zoomTransform.transitionMs}ms linear` : `transform ${zoomTransform.transitionMs}ms ${ZOOM_EASING}`,
+                                    // Allow the 3D phone to overflow this layer when in image-phone mode
+                                    overflow: 'hidden',
                                 }}
                             >
                                 {/* FONDO 3D: Solo se renderiza aquí adentro cuando el modo imagen 3D está activo */}
@@ -1583,6 +1866,8 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
                                         transformStyle: 'preserve-3d',
                                         zIndex: isVideoSelected ? 101 : 2,
                                         pointerEvents: 'none',
+                                        // Allow the 3D phone overlay to overflow when in image-phone mode
+                                        overflow: 'hidden',
                                     }}
                                 >
                                     {/* Capa 2B: Video con padding, esquinas redondeadas y sombras */}
@@ -1592,10 +1877,17 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
                                             padding: `${padding * 0.5}%`,
                                             zIndex: isVideoSelected ? 101 : 2,
                                             pointerEvents: 'none',
+                                            // Hide the video layer while a motion template is active;
+                                            // the video element stays in the DOM so playback/timing continues.
+                                            // In image mode, also hide when the phone overlay is active.
+                                            opacity: imagePhoneActive ? 0 : 1,
+                                            transition: 'opacity 0.25s ease, padding 0.2s',
                                             ...(mediaType === "image" && imageTransform && !apply3DToBackground ? {
                                                 perspective: `${imageTransform.perspective || 600}px`,
                                                 perspectiveOrigin: 'center center',
-                                            } : {})
+                                            } : {}),
+                                            // Allow the 3D phone overlay to overflow this padding layer
+                                            overflow: imagePhoneActive ? 'visible' : 'hidden',
                                         }}
                                     >
                                         <div
@@ -1618,7 +1910,7 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
                                                 transition: (mediaType === "image" && imageTransform && !apply3DToBackground)
                                                     ? 'transform 300ms cubic-bezier(0.25, 0.46, 0.45, 0.94)'
                                                     : isDraggingVideo || isDraggingRotation ? 'none' : 'transform 0.15s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
-                                                pointerEvents: 'auto',
+                                                pointerEvents: imagePhoneActive ? 'none' : 'auto',
                                                 transformStyle: mediaType === "image" && !apply3DToBackground ? 'preserve-3d' : undefined,
                                             }}
                                             onMouseEnter={() => hasMedia && setIsVideoHovered(true)}
@@ -1642,8 +1934,23 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
                                                     initialTranslateX: videoTransform.translateX,
                                                     initialTranslateY: videoTransform.translateY,
                                                 };
+                                                // Track click vs drag for onMockupClick dispatch
+                                                clickStartPosRef.current = { x: e.clientX, y: e.clientY };
                                             }}
                                             onMouseMove={(e) => { if (hasMedia) setVideoHoverCorner(getNearestCorner(e, videoTransform.rotation)); }}
+                                            onClick={(e) => {
+                                                if ((e.target as HTMLElement).closest('[data-rotation-handle]')) return;
+                                                if (!onMockupClick) return;
+                                                if (mockupId === "none" || mockupId === undefined) return;
+                                                // Only fire if pointer stayed within CLICK_THRESHOLD (i.e. a click, not a drag)
+                                                const start = clickStartPosRef.current;
+                                                clickStartPosRef.current = null;
+                                                if (!start) return;
+                                                const dx = e.clientX - start.x;
+                                                const dy = e.clientY - start.y;
+                                                if (dx * dx + dy * dy > CLICK_THRESHOLD * CLICK_THRESHOLD) return;
+                                                onMockupClick("2d");
+                                            }}
                                         >
                                             <div className="relative">
                                                 {isVideoSelected && videoHoverCorner && hasMedia && onVideoTransformChange && !isDraggingVideo && !isDraggingRotation && (
@@ -1675,7 +1982,7 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
                                                         </div>
                                                     </div>
                                                 )}
-                                                {(isVideoSelected || isVideoHovered) && hasMedia && !isDraggingRotation && (
+                                                {(isVideoSelected || isVideoHovered) && hasMedia && !isDraggingRotation && !imagePhoneActive && (
                                                     <div
                                                         className={`absolute -inset-px border pointer-events-none z-10 opacity-80 ${isVideoSelected ? 'border-blue-500' : 'border-white'}`}
                                                         style={{ borderRadius: `${roundedCorners + 1}px` }}
@@ -1772,7 +2079,7 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
                                                 transformStyle: mediaType === "image" && !apply3DToBackground ? 'preserve-3d' : undefined,
                                             }}
                                         >
-                                            <EditorHoverTooltip show={isVideoHovered && mediaType === "image"} />
+                                            <EditorHoverTooltip show={isVideoHovered && imagePhoneActive} />
                                         </div>
                                     </div>
                                 </div>
@@ -1791,7 +2098,7 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
                                     setIsDraggingElement={setIsDraggingElement}
                                     setIsDraggingElementRotation={setIsDraggingElementRotation}
                                     elementDragStart={elementDragStart}
-                                    layerZIndex={3}
+                                    layerZIndex={200}
                                     elementCorners={elementCorners}
                                     setElementCorners={setElementCorners}
                                     editingTextId={editingTextId}
@@ -1831,7 +2138,7 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
                                     setIsDraggingElement={setIsDraggingElement}
                                     setIsDraggingElementRotation={setIsDraggingElementRotation}
                                     elementDragStart={elementDragStart}
-                                    layerZIndex={100}
+                                    layerZIndex={200}
                                     hitTestOnly={true}
                                     elementCorners={elementCorners}
                                     setElementCorners={setElementCorners}
@@ -1844,6 +2151,141 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
                                     }}
                                 />
 
+                                {/* ── 3D phone overlay (video & image mode) ── */}
+                                {imagePhoneActive && (
+                                    <div
+                                        className="absolute inset-0 pointer-events-none"
+                                        style={{ zIndex: 155, overflow: "visible" }}
+                                    >
+                                        <div
+                                            className="absolute animate-in fade-in zoom-in-95 duration-300"
+                                            style={{
+                                                left: "50%",
+                                                top: "50%",
+                                                transform: `translate(calc(-50% + ${effectiveImagePhoneX}px), calc(-50% + ${effectiveImagePhoneY}px))`,
+
+                                                transformOrigin: "center center",
+                                                pointerEvents: "none",
+                                                userSelect: "none",
+                                                zIndex: 9999,
+                                            }}
+                                        >
+                                            <div
+                                                style={{
+                                                    position: "absolute",
+                                                    left: "50%",
+                                                    transform: "translateX(-50%)",
+                                                    pointerEvents: "none",
+                                                }}
+                                            >
+                                                <EditorHoverTooltip show={isVideoHovered && imagePhoneActive} />
+                                            </div>
+                                        </div>
+
+                                        {/* Mockup layer: SÍ se escala */}
+                                        <div
+                                            className="absolute animate-in fade-in zoom-in-95 duration-300"
+                                            data-image-phone-overlay
+                                            onMouseEnter={() => setIsVideoHovered(true)}
+                                            onMouseLeave={() => setIsVideoHovered(false)}
+                                            onPointerDown={(e) => {
+                                                if (!onMockupClick) return;
+                                                if (!imagePhoneActive) return;
+                                                clickStartPosRef.current = { x: e.clientX, y: e.clientY };
+                                            }}
+                                            onClick={(e) => {
+                                                if (!onMockupClick) return;
+                                                if (!imagePhoneActive) return;
+                                                const start = clickStartPosRef.current;
+                                                clickStartPosRef.current = null;
+                                                if (!start) return;
+                                                const dx = e.clientX - start.x;
+                                                const dy = e.clientY - start.y;
+                                                if (dx * dx + dy * dy > CLICK_THRESHOLD * CLICK_THRESHOLD) return;
+                                                e.stopPropagation();
+                                                onMockupClick("3d");
+                                            }}
+                                            style={{
+                                                left: "50%",
+                                                top: "50%",
+                                                transform: `translate(calc(-50% + ${effectiveImagePhoneX}px), calc(-50% + ${effectiveImagePhoneY}px)) scale(${effectiveImagePhoneScale})`,
+
+                                                transformOrigin: "center center",
+                                                pointerEvents: "auto",
+                                                userSelect: "none",
+                                                filter:
+                                                    imagePhoneShadow > 0 && imagePhoneDevice !== "laptop"
+                                                        ? `drop-shadow(0px ${18 * imagePhoneShadow}px ${28 * imagePhoneShadow}px ${imagePhoneShadowColor})`
+                                                        : "none",
+                                            }}
+                                        >
+                                            {phoneTransitioning || !activePhoneDevice ? (
+                                                <div
+                                                    style={{ width: PHONE_W, height: PHONE_H }}
+                                                    className="flex items-center justify-center"
+                                                >
+                                                    <div className="w-6 h-6 border-2 border-white/20 border-t-white/60 rounded-full animate-spin" />
+                                                </div>
+                                            ) : activePhoneDevice === "laptop" ? (
+                                                <Laptop3DViewer
+                                                    key="laptop"
+                                                    imageUrl={imageUrl}
+                                                    videoElement={mediaType === "video" ? videoRef.current : undefined}
+                                                    openingProgress={imagePhoneOpening}
+                                                    imageMaskConfig={imageMaskConfig}
+                                                    cropArea={cropArea}
+                                                    initialRotationX={imagePhoneRotX}
+                                                    initialRotationY={imagePhoneRotY}
+                                                    initialRotationZ={imagePhoneRotZ}
+                                                    onRotationChange={handlePhoneRotationChange}
+                                                    onMount={handlePhoneMount}
+                                                    onApi={handlePhoneApi}
+                                                    scale={1}
+                                                    zoom={1}
+                                                    shadowIntensity={imagePhoneShadow}
+                                                    shadowColor={imagePhoneShadowColor}
+                                                />
+                                            ) : activePhoneDevice === "iphone-13-pro-max" ? (
+                                                <IPhone13ProMax3DViewer
+                                                    key="iphone-13-pro-max"
+                                                    imageUrl={imageUrl}
+                                                    videoElement={mediaType === "video" ? videoRef.current : undefined}
+                                                    imageMaskConfig={imageMaskConfig}
+                                                    cropArea={cropArea}
+                                                    initialRotationX={imagePhoneRotX}
+                                                    initialRotationY={imagePhoneRotY}
+                                                    initialRotationZ={imagePhoneRotZ}
+                                                    onRotationChange={handlePhoneRotationChange}
+                                                    onMount={handlePhoneMount}
+                                                    onApi={handlePhoneApi}
+                                                    scale={1}
+                                                    zoom={1}
+                                                    shadowIntensity={imagePhoneShadow}
+                                                    shadowColor={imagePhoneShadowColor}
+                                                />
+                                            ) : (
+                                                <Phone3DViewer
+                                                    key={imagePhoneDevice}
+                                                    imageUrl={imageUrl}
+                                                    videoElement={mediaType === "video" ? videoRef.current : undefined}
+                                                    imageMaskConfig={imageMaskConfig}
+                                                    cropArea={cropArea}
+                                                    initialRotationX={imagePhoneRotX}
+                                                    initialRotationY={imagePhoneRotY}
+                                                    initialRotationZ={imagePhoneRotZ}
+                                                    modelUrl={imagePhoneModelUrl}
+                                                    scale={1}
+                                                    zoom={1}
+                                                    shadowIntensity={imagePhoneShadow}
+                                                    shadowColor={imagePhoneShadowColor}
+                                                    onRotationChange={handlePhoneRotationChange}
+                                                    onMount={handlePhoneMount}
+                                                    onApi={handlePhoneApi}
+                                                />
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                             {/* End perspective wrapper div */}
                             {(isDraggingElement && (alignmentGuides.vertical.length > 0 || alignmentGuides.horizontal.length > 0)) && (
@@ -1996,10 +2438,10 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
                                     }}
                                 />
                             )}
+
                         </div>
                     </div>
                 </div>
-
                 {/* ── Layers panel — pegado al lado derecho del canvas ── */}
                 <div className="flex-shrink-0 self-stretch flex items-stretch z-10">
                     <LayersPanel
@@ -2070,3 +2512,4 @@ export const VideoCanvas = forwardRef<VideoCanvasHandle, VideoCanvasProps>(funct
         </div>
     );
 });
+export const VideoCanvas = memo(VideoCanvasInner);

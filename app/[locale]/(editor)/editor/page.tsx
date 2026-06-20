@@ -10,6 +10,7 @@ import { useImageProjects } from "@/hooks/useImageProjects";
 import { getUploadedVideo, deleteUploadedVideo } from "@/lib/video-upload-cache";
 import { getUploadedImage, deleteUploadedImage } from "@/lib/image-upload-cache";
 import { useEditorMode } from "@/hooks/useEditorMode";
+import { useActiveTool } from "@/hooks/useActiveTool";
 import { useScreenCapture } from "@/hooks/useScreenCapture";
 import { useVideoExport } from "@/hooks/useVideoExport";
 import { useVideoThumbnails, type VideoThumbnail } from "@/hooks/useVideoThumbnails";
@@ -19,7 +20,7 @@ import { addVideoToLibrary, addVideoToLibraryWithMetadata, getLibraryVideoCount,
 import { calculateTotalDuration, findNextClipPosition, getClipAtTime, type VideoTrackClip } from "@/types/video-track.types";
 import type { ExportQuality, Tool, BackgroundTab, VideoCanvasHandle, BackgroundColorConfig, AspectRatio, CropArea, ZoomFragment, AudioTrack, ImageExportFormat } from "@/types";
 import type { TrimRange } from "@/types/timeline.types";
-import type { MockupConfig } from "@/types/mockup.types";
+import type { MockupConfig, MenuPage } from "@/types/mockup.types";
 import type { EditorState } from "@/types/editor-state.types";
 import { createInitialEditorState } from "@/types/editor-state.types";
 import { DEFAULT_MOCKUP_CONFIG, getMockupDefaultConfig } from "@/types/mockup.types";
@@ -39,7 +40,10 @@ import { findValidFragmentPosition } from "@/app/components/ui/editor/ZoomFragme
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { TimelineSkeleton } from "@/app/components/ui/Skeleton";
 import { AudioTrimModal } from "@/app/components/ui/editor/AudioTrimModal";
+import { useAuth } from "@/app/contexts/useAuth";
+import { useMockup3dContext } from "@/app/contexts/Mockup3dContext";
 import { VIDEO_Z_INDEX } from "@/lib/constants";
+import { getWallpaperUrl } from "@/lib/wallpaper.utils";
 import Image from "next/image";
 import Link from "next/link";
 import { TooltipAction } from "@/components/ui/tooltip-action";
@@ -55,6 +59,24 @@ export default function Editor() {
     // Editor mode (video/photo) from URL params
     const { mode: editorMode, isVideoMode, isPhotoMode } = useEditorMode();
 
+    // Auth — needed for building production-ready Recipe JSON
+    const { user } = useAuth();
+    const {
+        imagePhoneActive, setImagePhoneActive,
+        imagePhoneX, setImagePhoneX,
+        imagePhoneY, setImagePhoneY,
+        imagePhoneScale, setImagePhoneScale,
+        imagePhoneRotX, setImagePhoneRotX,
+        imagePhoneRotY, setImagePhoneRotY,
+        imagePhoneRotZ, setImagePhoneRotZ,
+        imagePhonePerspective, setImagePhonePerspective,
+        imagePhoneDevice, setImagePhoneDevice,
+        imagePhonePresetId, setImagePhonePresetId,
+        imagePhoneOpening, setImagePhoneOpening,
+        imagePhoneShadow, setImagePhoneShadow,
+        imagePhoneShadowColor, setImagePhoneShadowColor,
+    } = useMockup3dContext();
+
     // Undo/Redo system - centralized state management
     const {
         state: editorState,
@@ -65,6 +87,18 @@ export default function Editor() {
         canRedo,
         clearHistory,
     } = useUndoRedo<EditorState>(createInitialEditorState());
+
+    const handleUndo = useCallback(() => {
+        undo();
+        setUndoRedoVersion(v => v + 1);
+    }, [undo]);
+
+    const handleRedo = useCallback(() => {
+        redo();
+        setUndoRedoVersion(v => v + 1);
+    }, [redo]);
+
+    const [undoRedoVersion, setUndoRedoVersion] = useState(-1);
 
     // Image state for photo mode
     const [imageUrl, setImageUrl] = useState<string | null>(null);
@@ -112,7 +146,9 @@ export default function Editor() {
     const [imageMaskConfig, setImageMaskConfig] = useState<ImageMaskConfig>(DEFAULT_MASK_CONFIG);
     const [videoMaskConfig, setVideoMaskConfig] = useState<ImageMaskConfig>(DEFAULT_MASK_CONFIG);
 
-    const [activeTool, setActiveTool] = useState<Tool>("screenshot");
+    // Active tool: lee `?m=<tool>` de la URL en mount. setActiveTool
+    // actualiza la URL con replaceState (preserva mode y otros params).
+    const [activeTool, setActiveTool] = useActiveTool();
     const [elementsTextTabTrigger, setElementsTextTabTrigger] = useState(0);
     const [backgroundTab, setBackgroundTab] = useState<BackgroundTab>("wallpaper");
     const [selectedWallpaper, setSelectedWallpaper] = useState(0);
@@ -122,6 +158,16 @@ export default function Editor() {
     const [shadows, setShadows] = useState(10);
     const [isControlPanelOpen, setIsControlPanelOpen] = useState(true);
     const [isMobileControlPanelOpen, setIsMobileControlPanelOpen] = useState(false);
+    // Initial page for the MockupMenu when the user clicks a mockup already
+    // applied on the canvas. Updated by handleMockupClick; consumed by the
+    // MockupMenu via the `initialPage` prop (resets to "home" on remount when
+    // the menu is collapsed/expanded).
+    const [initialMockupMenuPage, setInitialMockupMenuPage] = useState<MenuPage>("home");
+    // Increments on every handleMockupClick so the MockupMenu re-navigates
+    // even when the user clicks the SAME mockup twice in a row (in which
+    // case initialMockupMenuPage would not change and the useEffect inside
+    // MockupMenu would not fire).
+    const [mockupMenuNavigationToken, setMockupMenuNavigationToken] = useState(0);
 
     // Video transform state (rotation and position)
     const [videoTransform, setVideoTransform] = useState<{ rotation: number; translateX: number; translateY: number }>({
@@ -276,6 +322,18 @@ export default function Editor() {
                     imagePreview3D: imageTransform,
                     apply3DToBackground,
                     imageMaskConfig,
+                    imagePhoneActive,
+                    imagePhoneX,
+                    imagePhoneY,
+                    imagePhoneScale,
+                    imagePhoneRotX,
+                    imagePhoneRotY,
+                    imagePhoneRotZ,
+                    imagePhonePerspective,
+                    imagePhoneDevice,
+                    imagePhoneOpening,
+                    imagePhoneShadow,
+                    imagePhoneShadowColor,
                 });
             } catch (error) {
                 console.error("Auto-save failed:", error);
@@ -304,6 +362,18 @@ export default function Editor() {
         imageTransform,
         apply3DToBackground,
         imageMaskConfig,
+        imagePhoneActive,
+        imagePhoneX,
+        imagePhoneY,
+        imagePhoneScale,
+        imagePhoneRotX,
+        imagePhoneRotY,
+        imagePhoneRotZ,
+        imagePhonePerspective,
+        imagePhoneDevice,
+        imagePhoneOpening,
+        imagePhoneShadow,
+        imagePhoneShadowColor,
     ]);
 
     useEffect(() => {
@@ -329,6 +399,18 @@ export default function Editor() {
         imageTransform,
         apply3DToBackground,
         imageMaskConfig,
+        imagePhoneActive,
+        imagePhoneX,
+        imagePhoneY,
+        imagePhoneScale,
+        imagePhoneRotX,
+        imagePhoneRotY,
+        imagePhoneRotZ,
+        imagePhonePerspective,
+        imagePhoneDevice,
+        imagePhoneOpening,
+        imagePhoneShadow,
+        imagePhoneShadowColor,
         currentProject,
         isPhotoMode,
         autoSaveCurrentProject,
@@ -376,10 +458,25 @@ export default function Editor() {
             height: currentProject.imageHeight,
         });
 
+        if (currentProject.imagePhoneActive !== undefined) {
+            setImagePhoneActive(currentProject.imagePhoneActive);
+        }
+        if (currentProject.imagePhoneX !== undefined) setImagePhoneX(currentProject.imagePhoneX);
+        if (currentProject.imagePhoneY !== undefined) setImagePhoneY(currentProject.imagePhoneY);
+        if (currentProject.imagePhoneScale !== undefined) setImagePhoneScale(currentProject.imagePhoneScale);
+        if (currentProject.imagePhoneRotX !== undefined) setImagePhoneRotX(currentProject.imagePhoneRotX);
+        if (currentProject.imagePhoneRotY !== undefined) setImagePhoneRotY(currentProject.imagePhoneRotY);
+        if (currentProject.imagePhoneRotZ !== undefined) setImagePhoneRotZ(currentProject.imagePhoneRotZ);
+        if (currentProject.imagePhonePerspective !== undefined) setImagePhonePerspective(currentProject.imagePhonePerspective);
+        if (currentProject.imagePhoneDevice !== undefined) setImagePhoneDevice(currentProject.imagePhoneDevice);
+        if (currentProject.imagePhoneOpening !== undefined) setImagePhoneOpening(currentProject.imagePhoneOpening);
+        if (currentProject.imagePhoneShadow !== undefined) setImagePhoneShadow(currentProject.imagePhoneShadow);
+        if (currentProject.imagePhoneShadowColor !== undefined) setImagePhoneShadowColor(currentProject.imagePhoneShadowColor);
+
         setTimeout(() => {
             isRestoringProjectRef.current = false;
-        }, 500); // 
-    }, [currentProject, isPhotoMode]);
+        }, 500); //
+    }, [currentProject, isPhotoMode, setImagePhoneActive, setImagePhoneX, setImagePhoneY, setImagePhoneScale, setImagePhoneRotX, setImagePhoneRotY, setImagePhoneRotZ, setImagePhonePerspective, setImagePhoneDevice, setImagePhoneOpening, setImagePhoneShadow, setImagePhoneShadowColor]);
 
     // Image project handlers
     const handleSelectImageProject = useCallback(async (projectId: string) => {
@@ -468,6 +565,20 @@ export default function Editor() {
                     imagePreview3D: imageTransform,
                     apply3DToBackground,
                     imageMaskConfig,
+                    // ── Preserve current phone/device state in the new project ──
+                    // Without these, the restore useEffect resets the device to 'phone'
+                    imagePhoneActive,
+                    imagePhoneX,
+                    imagePhoneY,
+                    imagePhoneScale,
+                    imagePhoneRotX,
+                    imagePhoneRotY,
+                    imagePhoneRotZ,
+                    imagePhonePerspective,
+                    imagePhoneDevice,
+                    imagePhoneOpening,
+                    imagePhoneShadow,
+                    imagePhoneShadowColor,
                 }
             );
 
@@ -498,6 +609,18 @@ export default function Editor() {
         imageTransform,
         apply3DToBackground,
         imageMaskConfig,
+        imagePhoneActive,
+        imagePhoneX,
+        imagePhoneY,
+        imagePhoneScale,
+        imagePhoneRotX,
+        imagePhoneRotY,
+        imagePhoneRotZ,
+        imagePhonePerspective,
+        imagePhoneDevice,
+        imagePhoneOpening,
+        imagePhoneShadow,
+        imagePhoneShadowColor,
     ]);
 
     // Screen capture handler - now creates a project
@@ -557,6 +680,20 @@ export default function Editor() {
                     imagePreview3D: imageTransform,
                     apply3DToBackground,
                     imageMaskConfig,
+                    // ── Preserve current phone/device state in the new project ──
+                    // Without these, the restore useEffect resets the device to 'phone'
+                    imagePhoneActive,
+                    imagePhoneX,
+                    imagePhoneY,
+                    imagePhoneScale,
+                    imagePhoneRotX,
+                    imagePhoneRotY,
+                    imagePhoneRotZ,
+                    imagePhonePerspective,
+                    imagePhoneDevice,
+                    imagePhoneOpening,
+                    imagePhoneShadow,
+                    imagePhoneShadowColor,
                 }
             );
 
@@ -587,6 +724,18 @@ export default function Editor() {
         imageTransform,
         apply3DToBackground,
         imageMaskConfig,
+        imagePhoneActive,
+        imagePhoneX,
+        imagePhoneY,
+        imagePhoneScale,
+        imagePhoneRotX,
+        imagePhoneRotY,
+        imagePhoneRotZ,
+        imagePhonePerspective,
+        imagePhoneDevice,
+        imagePhoneOpening,
+        imagePhoneShadow,
+        imagePhoneShadowColor,
     ]);
 
     // Handler for drag & drop images on canvas (photo mode only)
@@ -715,7 +864,6 @@ export default function Editor() {
             setTimeout(() => setImageExportProgress({ status: "idle", progress: 0, message: "" }), 4000);
         }
     }, [imageUrl, imageDimensions, selectedWallpaper, aspectRatio, customDimensions, selectedElementId, selectCanvasElement]);
-    // Generate canvas snapshot for photo mode previews
     useEffect(() => {
         if (!isPhotoMode || !imageUrl || !canvasRef.current) {
             setCanvasImageUrl(null);
@@ -724,7 +872,7 @@ export default function Editor() {
 
         const generateSnapshot = async () => {
             try {
-                await canvasRef.current?.drawFrame();
+                await canvasRef.current?.drawFrame(false);
                 const exportCanvas = canvasRef.current?.getExportCanvas();
                 if (exportCanvas) {
                     const dataUrl = exportCanvas.toDataURL("image/png", 0.8);
@@ -838,7 +986,10 @@ export default function Editor() {
             }
         }
     }, [audioTracks, masterVolume]);
-
+    const selectedCanvasElement = useMemo(
+        () => canvasElements.find(el => el.id === selectedElementId) ?? null,
+        [canvasElements, selectedElementId]
+    );
     // Sync audio playback with video current time
     const syncAudioPlayback = useCallback((videoTime: number, playing: boolean) => {
         if (isExportingRef.current) return;
@@ -915,6 +1066,19 @@ export default function Editor() {
                 apply3DToBackground,
                 imageMaskConfig,
                 videoMaskConfig,
+                imagePhoneActive,
+                imagePhoneX,
+                imagePhoneY,
+                imagePhoneScale,
+                imagePhoneRotX,
+                imagePhoneRotY,
+                imagePhoneRotZ,
+                imagePhonePerspective,
+                imagePhoneDevice,
+                imagePhonePresetId,
+                imagePhoneOpening,
+                imagePhoneShadow,
+                imagePhoneShadowColor,
             });
         }, 300);
         return () => {
@@ -929,11 +1093,23 @@ export default function Editor() {
         zoomFragments, mockupId, mockupConfig, canvasElements,
         audioTracks, muteOriginalAudio, masterVolume, cameraConfig,
         videoTransform, imageTransform, apply3DToBackground, imageMaskConfig, videoMaskConfig,
+        imagePhoneActive, imagePhoneX, imagePhoneY, imagePhoneScale, imagePhoneRotX,
+        imagePhoneRotY, imagePhoneRotZ, imagePhonePerspective, imagePhoneDevice,
+        imagePhonePresetId, imagePhoneOpening, imagePhoneShadow, imagePhoneShadowColor,
         setEditorState
     ]);
 
-    // Sync editorState → individual states (from undo/redo)
+    // Sync editorState → individual states (only on actual undo/redo, not every state change)
+    // This effect restores all UI state when the user presses Ctrl+Z / Ctrl+Y.
+    // Without the version guard, it would also fire on every debounced state save,
+    // overwriting interactive values (like 3D rotation from OrbitControls drag)
+    // with stale snapshot data.
+    const prevUndoRedoVersionRef = useRef(undoRedoVersion);
     useEffect(() => {
+        // Only run when undoRedoVersion actually changed (undo/redo happened)
+        if (prevUndoRedoVersionRef.current === undoRedoVersion) return;
+        prevUndoRedoVersionRef.current = undoRedoVersion;
+
         setBackgroundTab(editorState.backgroundTab);
         setSelectedWallpaper(editorState.selectedWallpaper);
         setBackgroundBlur(editorState.backgroundBlur);
@@ -959,7 +1135,20 @@ export default function Editor() {
         setApply3DToBackground(editorState.apply3DToBackground);
         setImageMaskConfig(editorState.imageMaskConfig);
         setVideoMaskConfig(editorState.videoMaskConfig);
-    }, [editorState]);
+        setImagePhoneActive(editorState.imagePhoneActive);
+        setImagePhoneX(editorState.imagePhoneX);
+        setImagePhoneY(editorState.imagePhoneY);
+        setImagePhoneScale(editorState.imagePhoneScale);
+        setImagePhoneRotX(editorState.imagePhoneRotX);
+        setImagePhoneRotY(editorState.imagePhoneRotY);
+        setImagePhoneRotZ(editorState.imagePhoneRotZ);
+        setImagePhonePerspective(editorState.imagePhonePerspective);
+        setImagePhoneDevice(editorState.imagePhoneDevice);
+        setImagePhonePresetId(editorState.imagePhonePresetId);
+        setImagePhoneOpening(editorState.imagePhoneOpening);
+        setImagePhoneShadow(editorState.imagePhoneShadow);
+        setImagePhoneShadowColor(editorState.imagePhoneShadowColor);
+    }, [undoRedoVersion]);
 
     // Handler para cambiar el mockup
     const handleMockupChange = useCallback((newMockupId: string) => {
@@ -972,6 +1161,16 @@ export default function Editor() {
     const handleMockupConfigChange = useCallback((updates: Partial<MockupConfig>) => {
         setMockupConfig(prev => ({ ...prev, ...updates }));
     }, []);
+
+    // Click on a mockup that's already applied on the canvas: open the mockup
+    // menu directly on the config page of that frame. Called by VideoCanvas
+    // (see onMockupClick in VideoCanvasProps).
+    const handleMockupClick = useCallback((kind: "2d" | "3d") => {
+        setInitialMockupMenuPage(kind === "2d" ? "detail-2d" : "detail-3d");
+        setMockupMenuNavigationToken((t) => t + 1);
+        setActiveTool("mockup");
+        setIsControlPanelOpen(true);
+    }, [setActiveTool]);
 
     // Handler para cambiar las esquinas redondeadas (sincroniza ambos valores)
     const handleRoundedCornersChange = useCallback((value: number) => {
@@ -1345,6 +1544,85 @@ export default function Editor() {
     const [videoBlob, setVideoBlob] = useState<Blob | null>(null);
 
     const handleExport = (quality: ExportQuality) => {
+        // ── BACKEND TESTING: imprime el Recipe JSON completo en la consola ──
+        // Para probar el backend: copia este JSON, reemplaza los campos
+        // "storageKey" con el path real del video subido a Supabase Storage:
+        //   "source-videos/{tu-user-id}/{libraryVideoId}.mp4"
+        console.log("=== RECIPE JSON PARA BACKEND (PRUEBAS) ===");
+        const userId = user?.id ?? "USER-ID-NO-DISPONIBLE";
+        const appOrigin = window.location.origin;
+        console.log(JSON.stringify({
+            quality,
+            trim: trimRange.end > trimRange.start
+                ? { start: trimRange.start, end: trimRange.end }
+                : null,
+            clips: videoClips.map(clip => ({
+                id: clip.id,
+                libraryVideoId: clip.libraryVideoId,
+                storageKey: `source-videos/${userId}/${clip.libraryVideoId}.mp4`,
+                name: clip.name,
+                startTime: clip.startTime,
+                trimStart: clip.trimStart,
+                trimEnd: clip.trimEnd,
+                duration: clip.trimEnd - clip.trimStart,
+                hasAudio: clipAudioStateRef.current.get(clip.libraryVideoId) !== false,
+                hasCamera: clip.hasCamera ?? false,
+            })),
+            muteOriginalAudio,
+            masterVolume,
+            videoHasAudioTrack,
+            audioTracks: audioTracks.map(track => {
+                const audio = uploadedAudios.find(a => a.id === track.audioId);
+                return {
+                    audioId: track.audioId,
+                    audioStorageKey: `source-audios/${userId}/${track.audioId}`,
+                    name: audio?.name ?? track.name,
+                    startTime: track.startTime,
+                    duration: track.duration,
+                    trimStart: track.trimStart ?? 0,
+                    volume: track.volume,
+                    loop: track.loop,
+                };
+            }),
+            backgroundTab,
+            selectedWallpaper,
+            // URL completa del wallpaper seleccionado (vacío si no se usa wallpaper)
+            wallpaperUrl: backgroundTab === "wallpaper" && selectedWallpaper >= 0
+                ? `${appOrigin}${getWallpaperUrl(selectedWallpaper)}`
+                : null,
+            backgroundBlur,
+            // dataUrl si el usuario subió imagen propia | URL https si es Unsplash/Pexels | "" si no hay
+            selectedImageUrl,
+            backgroundColorConfig,
+            aspectRatio,
+            customDimensions,
+            // Native video dimensions — used by the backend to compute output size when aspectRatio is 'auto'
+            sourceDimensions: videoDimensions ?? null,
+            cropArea,
+            padding,
+            roundedCorners,
+            shadows,
+            videoTransform,
+            mockupId,
+            mockupConfig,
+            zoomFragments,
+            canvasElements: canvasElements.map(el => {
+                // Resolver imagePath de elementos built-in a URLs completas
+                if (el.type === "image") {
+                    const imgEl = el as import("@/types/canvas-elements.types").ImageElement;
+                    if (imgEl.imagePath?.startsWith("/")) {
+                        return { ...el, imagePath: `${appOrigin}${imgEl.imagePath}` };
+                    }
+                }
+                return el;
+            }),
+            cameraConfig,
+            cameraStorageKey: null,
+            videoMaskConfig,
+        }, null, 2));
+        console.log("==========================================");
+        // ── FIN BACKEND TESTING ──
+
         isExportingRef.current = true;
         for (const audioEl of audioElementsRef.current.values()) {
             audioEl.pause();
@@ -1907,7 +2185,7 @@ export default function Editor() {
             if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
                 e.preventDefault();
                 if (canUndo) {
-                    undo();
+                    handleUndo();
                 }
             }
 
@@ -1915,14 +2193,14 @@ export default function Editor() {
                 ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'z')) {
                 e.preventDefault();
                 if (canRedo) {
-                    redo();
+                    handleRedo();
                 }
             }
         };
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [undo, redo, canUndo, canRedo]);
+    }, [handleUndo, handleRedo, canUndo, canRedo]);
 
     // Keyboard listener for Ctrl+V image paste (photo mode only)
     useEffect(() => {
@@ -2331,6 +2609,12 @@ export default function Editor() {
                     setVideoDuration(duration);
                     setTrimRange(prev => prev.end === 0 ? { start: 0, end: duration } : prev);
                 }
+            }
+
+            const vw = videoRef.current.videoWidth;
+            const vh = videoRef.current.videoHeight;
+            if (vw > 0 && vh > 0) {
+                setVideoDimensions({ width: vw, height: vh });
             }
         }
     }, []);
@@ -2756,13 +3040,15 @@ export default function Editor() {
                                         videoThumbnail={selectedZoomFragment ? getThumbnailForTime(selectedZoomFragment.startTime)?.dataUrl ?? null : null}
                                         currentTime={currentTime}
                                         getThumbnailForTime={getThumbnailForTime}
-                                        videoDimensions={customAspectRatio}
+                                        videoDimensions={videoDimensions}
                                         mockupId={mockupId}
                                         mockupConfig={mockupConfig}
                                         onMockupChange={handleMockupChange}
                                         onMockupConfigChange={handleMockupConfigChange}
+                                        initialMockupMenuPage={initialMockupMenuPage}
+                                        mockupMenuNavigationToken={mockupMenuNavigationToken}
                                         onAddCanvasElement={addCanvasElement}
-                                        selectedCanvasElement={canvasElements.find(el => el.id === selectedElementId) || null}
+                                        selectedCanvasElement={selectedCanvasElement}
                                         onUpdateCanvasElement={updateCanvasElement}
                                         onDeleteCanvasElement={deleteCanvasElement}
                                         onBringToFront={bringToFront}
@@ -2797,6 +3083,7 @@ export default function Editor() {
                                         onDeleteImageProject={handleDeleteImageProject}
                                         onUploadImageToHistory={handleUploadImageToHistory}
                                         elementsTextTabTrigger={elementsTextTabTrigger}
+                                        mediaType={isPhotoMode ? "image" : "video"}
                                     />
                                 </Suspense>
                             </motion.div>
@@ -2830,13 +3117,16 @@ export default function Editor() {
                     </AnimatePresence>
 
                     <VideoCanvas
+                        activeTool={activeTool}
+                        isPlaying={isPlaying}
+                        onMockupClick={handleMockupClick}
                         layersPanelToolbar={
                             <EditorTopBar
                                 onExport={handleExport}
                                 exportProgress={exportProgress}
                                 hasTransparentBackground={selectedWallpaper === -1}
-                                onUndo={undo}
-                                onRedo={redo}
+                                onUndo={handleUndo}
+                                onRedo={handleRedo}
                                 canUndo={canUndo}
                                 canRedo={canRedo}
                                 editorMode={editorMode}
@@ -3047,7 +3337,7 @@ export default function Editor() {
                 onMockupChange={handleMockupChange}
                 onMockupConfigChange={handleMockupConfigChange}
                 onAddCanvasElement={addCanvasElement}
-                selectedCanvasElement={canvasElements.find(el => el.id === selectedElementId) || null}
+                selectedCanvasElement={selectedCanvasElement}
                 onUpdateCanvasElement={updateCanvasElement}
                 onDeleteCanvasElement={deleteCanvasElement}
                 onBringToFront={bringToFront}

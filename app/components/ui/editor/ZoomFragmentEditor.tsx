@@ -3,10 +3,11 @@
 import { useRef, useMemo, useState } from "react";
 import { Icon } from "@iconify/react";
 import { useTranslations } from "next-intl";
-import { SliderControl } from "../SliderControl";
+import { SliderControl } from "../../../../components/ui/SliderControl";
 import type { ZoomFragmentEditorProps } from "@/types/zoom.types";
 import { formatZoomTime, zoomLevelToFactor, speedToTransitionMs, calculateHoldDuration } from "@/types/zoom.types";
 import { TooltipAction } from "@/components/ui/tooltip-action";
+import { DetailPageHeader } from "@/components/ui/DetailHeaderMenu";
 
 export function ZoomFragmentEditor({
     fragment, videoUrl, videoThumbnail, currentTime = 0,
@@ -77,12 +78,11 @@ export function ZoomFragmentEditor({
         <div className="flex flex-col h-full text-white">
             {/* Header */}
             <div className="flex items-center gap-2 p-3 border-b border-white/6 shrink-0">
-                <button onClick={onBack} className="flex items-center justify-center size-7 rounded-md hover:bg-white/6 text-white/50 transition-colors">
-                    <Icon icon="ph:arrow-left-bold" width="14" />
-                </button>
-                <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-md font-medium text-white truncate">{t("title")}</span>
-                </div>
+                <DetailPageHeader
+                    label={t("title")}
+                    icon="ph:arrow-left-bold"
+                    onBack={onBack}
+                />
                 <TooltipAction label={t("deleteTooltip")}>
                     <button onClick={onDelete} className="ml-auto flex items-center gap-1.5 text-[10px] text-red-400/70 hover:text-red-400 px-2 py-1 rounded-md transition-colors shrink-0">
                         <Icon icon="ph:trash-bold" width="12" />
@@ -113,11 +113,6 @@ export function ZoomFragmentEditor({
                                     {t("focusPoints.end")}
                                 </button>
                             </div>
-                        )}
-                        {!movementEnabled && (
-                            <span className="ml-auto font-mono text-[10px] text-white/30">
-                                {Math.round(fragment.focusX)}% · {Math.round(fragment.focusY)}%
-                            </span>
                         )}
                     </div>
                     <div

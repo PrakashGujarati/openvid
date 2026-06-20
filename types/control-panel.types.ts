@@ -1,7 +1,7 @@
 import { BackgroundTab, Tool, VideoThumbnail } from "./editor.types";
 import { BackgroundColorConfig } from "./background.types";
 import { ZoomFragment } from "./zoom.types";
-import { MockupConfig } from "./mockup.types";
+import { MockupConfig, MenuPage } from "./mockup.types";
 import type { CanvasElement } from "./canvas-elements.types";
 import type { UploadedAudio, AudioTrack } from "./audio.types";
 import type { CursorConfig, CursorRecordingData } from "./cursor.types";
@@ -44,6 +44,16 @@ export interface ControlPanelProps {
     mockupConfig?: MockupConfig;
     onMockupChange?: (mockupId: string) => void;
     onMockupConfigChange?: (config: Partial<MockupConfig>) => void;
+    /**
+     * Initial page for the MockupMenu (home | detail-2d | detail-3d). Set by
+     * the parent when the user clicks a mockup already applied on the canvas,
+     * so the menu opens directly on the config panel of that frame. The
+     * MockupMenu is keyed by `mockupMenuNavigationToken` to re-mount on every
+     * canvas click so the `useState(initialPage)` re-reads the new value
+     * even when the same page is selected twice in a row.
+     */
+    initialMockupMenuPage?: MenuPage;
+    mockupMenuNavigationToken?: number;
     onAddCanvasElement?: (element: CanvasElement) => void;
     selectedCanvasElement?: CanvasElement | null;
     onUpdateCanvasElement?: (id: string, updates: Partial<CanvasElement>) => void;
@@ -88,4 +98,6 @@ export interface ControlPanelProps {
     onAddImageToCanvas?: (projectId: string) => void;
     onDeleteImageProject?: (projectId: string) => void;
     onUploadImageToHistory?: (file: File) => void;
+    /** Which editor mode — determines which motion menu to show */
+    mediaType?: "video" | "image";
 }

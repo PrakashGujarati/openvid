@@ -11,6 +11,67 @@ export interface Preview3DConfig {
   perspective?: number;
 }
 
+export interface PhoneRotationOffset {
+  rx: number;
+  ry: number;
+}
+
+export const PREVIEW_TO_PHONE_OFFSET: Record<string, PhoneRotationOffset> = {
+  "front":              { rx: 0,    ry: 0    },
+  "top-left-angle":     { rx: 15,   ry: 25   },
+  "top-right-angle":    { rx: 15,   ry: -22  },
+  "bottom-left-angle":  { rx: -15,  ry: 25   },
+  "bottom-right-angle": { rx: -15,  ry: -22  },
+  "isometric":          { rx: 25,   ry: -45  },
+  "tilt-up":            { rx: 15,   ry: 0    },
+  "tilt-down":          { rx: -15,  ry: 0    },
+};
+
+export const CSS_PHONE_PREVIEW_ROTATIONS: Record<string, PhoneRotationOffset> = {
+  "front":              { rx: -30, ry: 22   },
+  "top-left-angle":     { rx: -45, ry: 40   },
+  "top-right-angle":    { rx: -45, ry: -15  },
+  "bottom-left-angle":  { rx: -10, ry: 40   },
+  "bottom-right-angle": { rx: -10, ry: -15  },
+  "isometric":          { rx: -55, ry: -40  },
+  "tilt-up":            { rx: -40, ry: 22   },
+  "tilt-down":          { rx: -8,  ry: 22   },
+};
+
+export const CSS_LAPTOP_PREVIEW_ROTATIONS: Record<string, PhoneRotationOffset> = {
+  "front":              { rx: 30,  ry: -30  },
+  "top-left-angle":     { rx: 50,  ry: -45  },
+  "top-right-angle":    { rx: 50,  ry: 10   },
+  "bottom-left-angle":  { rx: 15,  ry: -45  },
+  "bottom-right-angle": { rx: 15,  ry: 10   },
+  "isometric":          { rx: 60,  ry: -55  },
+  "tilt-up":            { rx: 50,  ry: -30  },
+  "tilt-down":          { rx: 15,  ry: -30  },
+};
+
+export const THREEJS_PHONE_ROTATIONS: Record<string, PhoneRotationOffset> = {
+  "front":              { rx: -58.23, ry: -29.82 },
+  "top-left-angle":     { rx: -72,    ry: -55    },
+  "top-right-angle":    { rx: -72,    ry: -5     },
+  "bottom-left-angle":  { rx: -42,    ry: -55    },
+  "bottom-right-angle": { rx: -42,    ry: -5     },
+  "isometric":          { rx: -80,    ry: -70    },
+  "tilt-up":            { rx: -75,    ry: -29.82 },
+  "tilt-down":          { rx: -38,    ry: -29.82 },
+};
+
+/** Three.js absolute rotation values for the laptop viewer. */
+export const THREEJS_LAPTOP_ROTATIONS: Record<string, PhoneRotationOffset> = {
+  "front":              { rx: 43.23,  ry: -37.82 },
+  "top-left-angle":     { rx: 55,     ry: -60    },
+  "top-right-angle":    { rx: 55,     ry: -15    },
+  "bottom-left-angle":  { rx: 30,     ry: -60    },
+  "bottom-right-angle": { rx: 30,     ry: -15    },
+  "isometric":          { rx: 65,     ry: -75    },
+  "tilt-up":            { rx: 60,     ry: -37.82 },
+  "tilt-down":          { rx: 25,     ry: -37.82 },
+};
+
 export const PREVIEW_CONFIGS: readonly Preview3DConfig[] = Object.freeze([
   Object.freeze({ id: "front", label: "Front", rotateX: 0, rotateY: 0, rotateZ: 0, translateY: 0, scale: 0.9, perspective: 600 }),
   Object.freeze({ id: "top-left-angle", label: "Top Left Angle", rotateX: 18, rotateY: 25, rotateZ: -15, translateY: -10, scale: 0.95, perspective: 500 }),

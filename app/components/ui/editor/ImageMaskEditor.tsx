@@ -3,7 +3,7 @@
 import { Icon } from "@iconify/react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { SliderControl } from "../SliderControl";
+import { SliderControl } from "../../../../components/ui/SliderControl";
 import {
     Popover,
     PopoverTrigger,
@@ -175,7 +175,7 @@ export function ImageMaskEditor({
                                                 </div>
 
                                                 {active && (
-                                                    <div className="absolute top-2 right-2 z-30 size-4 rounded-full bg-gradient-primary flex items-center justify-center shadow-xl">
+                                                    <div className="absolute top-2 right-2 z-30 size-4 rounded-full bg-cyan-500 flex items-center justify-center shadow-xl">
                                                         <Icon icon="mdi:check" width="10" className="text-white" />
                                                     </div>
                                                 )}

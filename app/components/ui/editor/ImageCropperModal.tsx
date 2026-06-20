@@ -227,7 +227,6 @@ export function ImageCropperModal({
                     transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
                     className="bg-[#0a0a0b] rounded-2xl border border-white/10 w-[92vw] max-w-5xl max-h-[88vh] flex flex-col overflow-hidden shadow-2xl"
                 >
-                    {/* Header */}
                     <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/10">
                         <div className="flex items-center gap-2.5">
                             <div className="w-6 h-6 rounded-md bg-white/10 flex items-center justify-center">
@@ -248,9 +247,7 @@ export function ImageCropperModal({
                         </button>
                     </div>
 
-                    {/* Content */}
                     <div className="flex-1 flex overflow-hidden min-h-0">
-                        {/* Preview Area */}
                         <div className="flex-1 p-6 flex items-center justify-center bg-black/50 overflow-hidden">
                             <div
                                 ref={containerRef}
@@ -266,7 +263,6 @@ export function ImageCropperModal({
                                         maxHeight: '100%',
                                     }}
                                 >
-                                    {/* Imagen */}
                                     <img
                                         ref={imageRef}
                                         src={imageUrl || ''}
@@ -276,7 +272,6 @@ export function ImageCropperModal({
                                         draggable={false}
                                     />
 
-                                    {/* Overlay oscuro fuera del área de recorte */}
                                     <div className="absolute inset-0 pointer-events-none">
                                         <svg width="100%" height="100%" className="absolute inset-0">
                                             <defs>
@@ -295,7 +290,6 @@ export function ImageCropperModal({
                                         </svg>
                                     </div>
 
-                                    {/* Área de recorte */}
                                     <div
                                         className="absolute border-2 border-white shadow-lg cursor-move"
                                         style={{
@@ -306,39 +300,46 @@ export function ImageCropperModal({
                                         }}
                                         onMouseDown={(e) => handleMouseDown(e, "move")}
                                     >
-                                        {/* Regla de tercios */}
                                         <div className="absolute inset-0 grid grid-cols-3 grid-rows-3 pointer-events-none">
                                             {[...Array(9)].map((_, i) => (
                                                 <div key={i} className="border border-white/20" />
                                             ))}
                                         </div>
 
-                                        {/* Handles de resize */}
-                                        {["nw", "ne", "sw", "se", "n", "s", "w", "e"].map((handle) => (
-                                            <div
-                                                key={handle}
-                                                className={`absolute w-3 h-3 bg-white border border-gray-800 rounded-sm cursor-${
-                                                    handle.includes("n") || handle.includes("s") ? "ns" : handle.includes("w") || handle.includes("e") ? "ew" : "nwse"
-                                                }-resize hover:scale-125 transition-transform`}
-                                                style={{
-                                                    ...(handle.includes("n") && { top: -1.5 }),
-                                                    ...(handle.includes("s") && { bottom: -1.5 }),
-                                                    ...(handle.includes("w") && { left: -1.5 }),
-                                                    ...(handle.includes("e") && { right: -1.5 }),
-                                                    ...(!handle.includes("n") && !handle.includes("s") && { top: "50%", transform: "translateY(-50%)" }),
-                                                    ...(!handle.includes("w") && !handle.includes("e") && { left: "50%", transform: "translateX(-50%)" }),
-                                                }}
-                                                onMouseDown={(e) => handleMouseDown(e, "resize", handle)}
-                                            />
-                                        ))}
+                                        {["nw", "ne", "sw", "se", "n", "s", "w", "e"].map((handle) => {
+                                            const cursorClass =
+                                                handle === "nw" || handle === "se" ? "cursor-nwse-resize" :
+                                                    handle === "ne" || handle === "sw" ? "cursor-nesw-resize" :
+                                                        handle === "n" || handle === "s" ? "cursor-ns-resize" :
+                                                            "cursor-ew-resize";
+
+                                            const translateClass =
+                                                handle === "n" || handle === "s" ? "-translate-x-1/2" :
+                                                    handle === "w" || handle === "e" ? "-translate-y-1/2" :
+                                                        "";
+
+                                            return (
+                                                <div
+                                                    key={handle}
+                                                    className={`absolute w-3 h-3 bg-white border border-gray-800 rounded-full transition hover:scale-125 transform ${translateClass} ${cursorClass}`}
+                                                    style={{
+                                                        top: handle.includes("n") ? "-8px" : handle.includes("s") ? "auto" : "50%",
+                                                        bottom: handle.includes("s") ? "-8px" : "auto",
+
+                                                        left: handle.includes("w") ? "-8px" : handle.includes("e") ? "auto" : "50%",
+                                                        right: handle.includes("e") ? "-8px" : "auto",
+                                                    }}
+                                                    onMouseDown={(e) => handleMouseDown(e, "resize", handle)}
+                                                />
+                                            );
+                                        })}
                                     </div>
+
                                 </div>
                             </div>
                         </div>
 
-                        {/* Sidebar */}
                         <div className="w-64 bg-[#0a0a0b] border-l border-white/10 flex flex-col">
-                            {/* Aspect Ratios */}
                             <div className="p-4 border-b border-white/10">
                                 <p className="text-[10px] uppercase tracking-widest font-semibold text-white/60 mb-3">
                                     {t("sections.ratio")}
@@ -348,17 +349,16 @@ export function ImageCropperModal({
                                         <div key={ratio.label} className="relative">
                                             <button
                                                 onClick={() => handleAspectRatioSelect(ratio.value)}
-                                                className={`w-full py-1.5 text-[11px] font-medium rounded-lg transition-all ${
-                                                    selectedAspectRatio === ratio.value
-                                                        ? "text-white border-transparent"
-                                                        : "bg-white/4 text-white/40 hover:bg-white/8 hover:text-white/70 border border-white/10"
-                                                }`}
+                                                className={`w-full py-1.5 text-[11px] font-medium rounded-lg transition-all ${selectedAspectRatio === ratio.value
+                                                    ? "text-white border-transparent"
+                                                    : "bg-white/4 text-white/40 hover:bg-white/8 hover:text-white/70 border border-white/10"
+                                                    }`}
                                                 style={
                                                     selectedAspectRatio === ratio.value
                                                         ? {
-                                                              background: "radial-gradient(circle at 50% 0%, #555555 0%, #252525 64%)",
-                                                              boxShadow: "0 0 0 1px #fff3, 0 4px 4px 0 #0004, 0 0 0 1px #333",
-                                                          }
+                                                            background: "radial-gradient(circle at 50% 0%, #555555 0%, #252525 64%)",
+                                                            boxShadow: "0 0 0 1px #fff3, 0 4px 4px 0 #0004, 0 0 0 1px #333",
+                                                        }
                                                         : {}
                                                 }
                                             >
@@ -372,7 +372,6 @@ export function ImageCropperModal({
                                 </div>
                             </div>
 
-                            {/* Crop Area Info */}
                             <div className="p-4 border-b border-white/10">
                                 <p className="text-[10px] uppercase tracking-widest font-semibold text-white/60 mb-3">
                                     {t("sections.area")}
@@ -395,7 +394,6 @@ export function ImageCropperModal({
 
                             <div className="flex-1" />
 
-                            {/* Actions */}
                             <div className="p-4 flex flex-col gap-2">
                                 <Button variant="outline" onClick={handleReset}>
                                     {t("buttons.reset")}

@@ -394,7 +394,7 @@ export function Timeline({
                             <div className="flex-1 flex flex-col" onClick={handleTrackClick}>
 
                                 {/* Video track */}
-                                <div className="flex-1 flex items-center py-1.5 relative">
+                                <div className="flex-1 flex items-center py-0.5 relative">
                                     <div
                                         className="h-full rounded-md flex items-center relative bg-[#0a1510] border border-white/5"
                                         style={{ width: contentWidth > 0 ? contentWidth : '100%' }}

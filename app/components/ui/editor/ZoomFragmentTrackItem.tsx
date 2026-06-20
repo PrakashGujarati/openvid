@@ -177,7 +177,7 @@ export function ZoomFragmentTrackItem({
     return (
         <motion.div
             ref={containerRef}
-            className={`absolute h-[80%] top-[10%] rounded-md flex items-center border transition-shadow select-none ${isSelected || isInteracting
+            className={`absolute h-[80%] top-[5%] rounded-md flex items-center border transition-shadow select-none ${isSelected || isInteracting
                     ? 'bg-blue-500/30 border-blue-400/70 shadow-[0_0_10px_rgba(59,130,246,0.3)] z-10'
                     : 'bg-blue-600/20 border-blue-500/35 hover:border-blue-500/60'
                 } ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}

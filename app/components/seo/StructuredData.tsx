@@ -62,7 +62,7 @@ export function StructuredData({ data }: StructuredDataProps) {
   );
 }
 
-export function generateWebAppSchema(locale: 'es' | 'en'): WebApplicationSchema {
+export function generateWebAppSchema(locale: 'es' | 'en' | 'ru'): WebApplicationSchema {
   const baseUrl = 'https://openvid.dev';
 
   const content = {

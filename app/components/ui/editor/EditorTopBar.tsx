@@ -8,7 +8,7 @@ import type { EditorMode } from "@/types/editor-mode.types";
 import type { ImageExportFormat } from "@/types/image-project.types";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useEffect, useState } from "react";
-import { useAuth } from "@/hooks/useAuth";
+import { useAuth } from "@/app/contexts/useAuth";
 import { useTranslations } from "next-intl";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import Image from "next/image";
@@ -136,7 +136,7 @@ export function EditorTopBar({
                 <div className="flex items-center gap-2 border-r border-white/10 pr-3">
                     <TooltipAction label={canUndo ? t("history.undo") : t("history.noUndo")}>
                         <button
-                            onClick={onUndo}
+                            onClick={() => onUndo?.()}
                             disabled={!canUndo}
                             className={`transition-colors ${canUndo ? "hover:text-white text-white/70" : "opacity-30 cursor-not-allowed text-white/30"
                                 }`}
@@ -146,7 +146,7 @@ export function EditorTopBar({
                     </TooltipAction>
                     <TooltipAction label={canRedo ? t("history.redo") : t("history.noRedo")}>
                         <button
-                            onClick={onRedo}
+                            onClick={() => onRedo?.()}
                             disabled={!canRedo}
                             className={`transition-colors ${canRedo ? "hover:text-white text-white/70" : "opacity-30 cursor-not-allowed text-white/60"
                                 }`}
@@ -183,7 +183,7 @@ export function EditorTopBar({
                 ) : !user ? (
                     <div className="pl-3 border-l border-white/10 ml-1 flex items-center h-8">
                         <Link href="/login" className="text-sm font-medium text-white/80 hover:text-white transition-colors">
-                            {t("auth.signIn")}
+                            {t("auth.access")}
                         </Link>
                     </div>
                 ) : (

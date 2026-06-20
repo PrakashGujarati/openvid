@@ -1,9 +1,9 @@
 "use client";
 
 import { Icon } from "@iconify/react";
-import { useState, useEffect, useRef, startTransition, useCallback } from "react";
+import { useState, useEffect, useRef, startTransition, useCallback, useLayoutEffect } from "react";
 import { useTranslations } from "next-intl";
-import { SliderControl } from "../SliderControl";
+import { SliderControl } from "../../../../components/ui/SliderControl";
 import { SVG_CATEGORIES, IMAGE_CATEGORIES, PINNED_SVG_ITEMS, PINNED_IMAGE_ITEMS, getImagePreviewPath } from "@/lib/canvas-elements.config";
 import { SvgElement, TextElement, ImageElement, ElementsMenuProps, PRESET_COLORS, TEXT_PRESETS, FONT_FAMILIES, FONT_WEIGHTS, UploadedImage, STORAGE_KEY, ACCEPTED_FORMATS, MAX_FILE_SIZE } from "@/types/canvas-elements.types";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -40,6 +40,11 @@ export function ElementsMenu({
     const [imageSize, setImageSize] = useState(30);
     const [selectedSvgCategory, setSelectedSvgCategory] = useState<string>("all");
     const [selectedImageCategory, setSelectedImageCategory] = useState<string>("all");
+    const onUpdateElementRef = useRef(onUpdateElement);
+    useLayoutEffect(() => {
+        onUpdateElementRef.current = onUpdateElement;
+    });
+
     const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>(() => {
         try {
             const stored = localStorage.getItem(STORAGE_KEY);
@@ -54,7 +59,6 @@ export function ElementsMenu({
     const isSyncing = useRef(false);
     const lastSelectedId = useRef<string | null>(null);
 
-    // Switch to text tab when the parent triggers it (e.g. 'T' key shortcut)
     useEffect(() => {
         if (textTabTrigger > 0) {
             startTransition(() => {
@@ -99,26 +103,34 @@ export function ElementsMenu({
     }, [selectedElement]);
 
     useEffect(() => {
-        if (!isSyncing.current && selectedElement?.type === "svg" && onUpdateElement) {
-            // SVG elements are always square
-            onUpdateElement(selectedElement.id, { width: shapeSize, height: shapeSize, color: shapeColor, opacity: shapeOpacity / 100 });
+        if (!isSyncing.current && selectedElement?.type === "svg") {
+            onUpdateElementRef.current?.(selectedElement.id, {
+                width: shapeSize, height: shapeSize,
+                color: shapeColor, opacity: shapeOpacity / 100
+            });
         }
-    }, [shapeSize, shapeColor, shapeOpacity, selectedElement?.id, selectedElement?.type, onUpdateElement]);
+    }, [shapeSize, shapeColor, shapeOpacity, selectedElement?.id, selectedElement?.type]);
 
     useEffect(() => {
-        if (!isSyncing.current && selectedElement?.type === "image" && onUpdateElement) {
-            // Maintain aspect ratio: calculate height based on original proportions
+        if (!isSyncing.current && selectedElement?.type === "image") {
             const aspectRatio = selectedElement.width / selectedElement.height;
             const newHeight = aspectRatio > 0 ? imageSize / aspectRatio : imageSize;
-            onUpdateElement(selectedElement.id, { width: imageSize, height: newHeight, opacity: imageOpacity / 100 });
+            onUpdateElementRef.current?.(selectedElement.id, {
+                width: imageSize, height: newHeight, opacity: imageOpacity / 100
+            });
         }
-    }, [imageSize, imageOpacity, selectedElement?.id, selectedElement?.type, selectedElement?.width, selectedElement?.height, onUpdateElement]);
+    }, [imageSize, imageOpacity, selectedElement?.id, selectedElement?.type,
+        selectedElement?.width, selectedElement?.height]);
 
     useEffect(() => {
-        if (!isSyncing.current && selectedElement?.type === "text" && onUpdateElement) {
-            onUpdateElement(selectedElement.id, { content: textContent, fontSize: textFontSize, color: textColor, opacity: textOpacity / 100, fontFamily: textFontFamily, fontWeight: textFontWeight });
+        if (!isSyncing.current && selectedElement?.type === "text") {
+            onUpdateElementRef.current?.(selectedElement.id, {
+                content: textContent, fontSize: textFontSize, color: textColor,
+                opacity: textOpacity / 100, fontFamily: textFontFamily, fontWeight: textFontWeight
+            });
         }
-    }, [textContent, textFontSize, textColor, textOpacity, textFontFamily, textFontWeight, selectedElement?.id, selectedElement?.type, onUpdateElement]);
+    }, [textContent, textFontSize, textColor, textOpacity, textFontFamily,
+        textFontWeight, selectedElement?.id, selectedElement?.type]);
 
     useEffect(() => {
         if (uploadedImages.length > 0) {

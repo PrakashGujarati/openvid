@@ -2,12 +2,12 @@ import { SVG_COMPONENTS } from "@/components/canvas-svg";
 import { RotationHandleIcon } from "@/components/ui/RotationHandleIcon";
 import { Corner, VIDEO_Z_INDEX, getNearestCorner, getCornerStyle } from "@/lib";
 import { CanvasElement, SvgElement, ImageElement, TextElement } from "@/types/canvas-elements.types";
-import { useRef, useState, useEffect, useCallback } from "react";
+import { useRef, useState, useEffect, useCallback, useMemo } from "react";
 
 function InlineTextEditor({
     element,
     refSize,
-    onEnd,
+    onEnd
 }: {
     element: TextElement;
     refSize: number;
@@ -33,7 +33,7 @@ function InlineTextEditor({
         const sel = window.getSelection();
         sel?.removeAllRanges();
         sel?.addRange(range);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const fontSize = refSize > 0 ? element.fontSize * (refSize / 1080) : element.fontSize;
@@ -152,13 +152,22 @@ export function CanvasElementsLayer({
         }
     }, [canvasContainerRef]);
 
-    const filteredElements = hitTestOnly
-        ? canvasElements
-        : canvasElements.filter(element =>
-            behindVideo ? element.zIndex < VIDEO_Z_INDEX : element.zIndex >= VIDEO_Z_INDEX
-        );
+    const sortedElements = useMemo(() => {
+        const filtered = hitTestOnly
+            ? canvasElements
+            : canvasElements.filter(el =>
+                behindVideo ? el.zIndex < VIDEO_Z_INDEX : el.zIndex >= VIDEO_Z_INDEX
+            );
+        return [...filtered].sort((a, b) => {
+            if (hitTestOnly) {
+                if (a.id === selectedElementId) return 1;
+                if (b.id === selectedElementId) return -1;
+            }
+            return a.zIndex - b.zIndex;
+        });
+    }, [canvasElements, hitTestOnly, behindVideo, selectedElementId]);
 
-    if (filteredElements.length === 0) {
+    if (sortedElements.length === 0) {
         return (
             <div
                 ref={setRefs}
@@ -179,13 +188,7 @@ export function CanvasElementsLayer({
             }}
             style={{ zIndex: layerZIndex, pointerEvents: 'none' }}
         >
-            {[...filteredElements].sort((a, b) => {
-                if (hitTestOnly) {
-                    if (a.id === selectedElementId) return 1;
-                    if (b.id === selectedElementId) return -1;
-                }
-                return a.zIndex - b.zIndex;
-            }).map((element) => {
+            {sortedElements.map((element) => {
                 const isSelected = selectedElementId === element.id || (selectedElementIds?.includes(element.id) ?? false);
                 const isHovered = hoveredElementId === element.id;
                 const activeCorner: Corner | null = elementCorners[element.id] ?? null;

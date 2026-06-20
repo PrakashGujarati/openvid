@@ -11,7 +11,7 @@ export default function DonationCard() {
       href="/donate" 
       target="_blank" 
       rel="noopener noreferrer"
-      className="relative group flex items-center justify-between w-full overflow-hidden rounded-3xl border border-white/10 bg-[#0E0E12] p-8 transition-all hover:border-white/20 hover:bg-white/4 active:scale-[0.99]"
+      className="relative group flex items-center justify-between w-full overflow-hidden squircle-element-camera border border-white/10 bg-[#0E0E12] p-8 transition-all hover:border-white/20 hover:bg-white/4 active:scale-[0.99]"
       aria-label={t('title')}
     >
       <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-blue-500/15 blur-[80px] pointer-events-none transition-opacity group-hover:opacity-100 opacity-50" />

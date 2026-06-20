@@ -37,6 +37,19 @@ export interface EditorState {
     apply3DToBackground: boolean;
     imageMaskConfig: ImageMaskConfig;
     videoMaskConfig: ImageMaskConfig;
+    imagePhoneActive: boolean;
+    imagePhoneX: number;
+    imagePhoneY: number;
+    imagePhoneScale: number;
+    imagePhoneRotX: number;
+    imagePhoneRotY: number;
+    imagePhoneRotZ: number;
+    imagePhonePerspective: number;
+    imagePhoneDevice: 'phone' | 'iphone' | 'iphone-13-pro-max' | 'samsung' | 'laptop';
+    imagePhonePresetId: string;
+    imagePhoneOpening: number;
+    imagePhoneShadow: number;
+    imagePhoneShadowColor: string;
 }
 
 export function createInitialEditorState(overrides?: Partial<EditorState>): EditorState {
@@ -90,6 +103,19 @@ export function createInitialEditorState(overrides?: Partial<EditorState>): Edit
         videoMaskConfig: {
             enabled: false,
         },
+        imagePhoneActive: false,
+        imagePhoneX: 0,
+        imagePhoneY: 0,
+        imagePhoneScale: 1,
+        imagePhoneRotX: 0,
+        imagePhoneRotY: 0,
+        imagePhoneRotZ: 0,
+        imagePhonePerspective: 600,
+        imagePhoneDevice: 'phone',
+        imagePhonePresetId: 'front',
+        imagePhoneOpening: 1,
+        imagePhoneShadow: 0.6,
+        imagePhoneShadowColor: '#000000',
         ...overrides,
     };
 }

@@ -2,8 +2,8 @@
 
 import { Icon } from "@iconify/react";
 import { motion } from "framer-motion";
-import { SliderControl } from "../SliderControl";
-import { TabButton } from "../TabButton";
+import { SliderControl } from "../../../../components/ui/SliderControl";
+import { TabButton } from "../../../../components/ui/TabButton";
 import type { ControlPanelProps } from "@/types/control-panel.types";
 import Link from "next/link";
 import Image from "next/image";
@@ -29,7 +29,6 @@ import CursorMenu from "./CursorMenu";
 import { DEFAULT_CURSOR_CONFIG } from "@/types/cursor.types";
 import { CameraMenu } from "./CameraMenu";
 
-// Lazy loads (se mantienen igual)
 const ImageRecentBackgroundGrid = lazy(() => import("../ImageRecentBackgroundGrid").then(mod => ({ default: mod.ImageRecentBackgroundGrid })));
 const BackgroundColorEditor = lazy(() => import("../BackgroundColorEditor").then(mod => ({ default: mod.BackgroundColorEditor })));
 const ZoomFragmentEditor = lazy(() => import("./ZoomFragmentEditor").then(mod => ({ default: mod.ZoomFragmentEditor })));
@@ -88,6 +87,14 @@ export function ControlPanel({
     mockupConfig,
     onMockupChange,
     onMockupConfigChange,
+    // Initial page for the MockupMenu (home | detail-2d | detail-3d). Set by
+    // the parent when the user clicks a mockup already applied on the canvas,
+    // so the menu opens directly on the config panel of that frame. The
+    // MockupMenu is keyed by `mockupMenuNavigationToken` to re-mount on every
+    // canvas click so the `useState(initialPage)` re-reads the new value
+    // even when the same page is selected twice in a row.
+    initialMockupMenuPage,
+    mockupMenuNavigationToken = 0,
     // Canvas elements props
     onAddCanvasElement,
     selectedCanvasElement,
@@ -128,6 +135,7 @@ export function ControlPanel({
     onAddImageToCanvas,
     onDeleteImageProject,
     onUploadImageToHistory,
+    mediaType = "video",
 }: ExtendedControlPanelProps) {
 
     const t = useTranslations("controlPanel");
@@ -275,9 +283,33 @@ export function ControlPanel({
 
                 {activeTool === "mockup" && (
                     <Suspense fallback={<MockupMenuSkeleton />}>
-                        <MockupMenu mockupId={mockupId} mockupConfig={mockupConfig} onMockupChange={onMockupChange} onMockupConfigChange={onMockupConfigChange} />
+                        <MockupMenu
+                            key={mockupMenuNavigationToken}
+                            mockupId={mockupId}
+                            mockupConfig={mockupConfig}
+                            onMockupChange={onMockupChange}
+                            onMockupConfigChange={onMockupConfigChange}
+                            backgroundTab={backgroundTab}
+                            selectedWallpaper={selectedWallpaper}
+                            selectedImageUrl={selectedImageUrl}
+                            initialPage={initialMockupMenuPage}
+                            mediaType={mediaType}
+                        />
                     </Suspense>
                 )}
+                {/* 
+                {activeTool === "motion" && (
+                    <Suspense >
+                        {mediaType === "image"
+                            ? <ImageMotionMenu
+                                backgroundColorCss={undefined}
+                                backgroundTab={backgroundTab}
+                                selectedWallpaper={selectedWallpaper}
+                                selectedImageUrl={selectedImageUrl}
+                            />
+                            : <MotionMenu />}
+                    </Suspense>
+                )} */}
 
                 {activeTool === "videos" && (
                     <Suspense fallback={<VideosMenuSkeleton />}>

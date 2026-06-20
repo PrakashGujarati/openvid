@@ -29,7 +29,7 @@ export default function BannerCTA() {
         >
             <div
                 aria-hidden="true"
-                className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(0,163,255,0.09)_0%,transparent_70%)]"
+                className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(0,163,255,0.1)_0%,transparent_70%)]"
             />
 
             <div

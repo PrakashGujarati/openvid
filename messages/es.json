@@ -418,6 +418,7 @@
     },
     "tools": {
       "mockup": "Mockup",
+      "motion": "Motion",
       "videos": "Vídeos",
       "elements": "Elementos",
       "audio": "Audio",
@@ -430,6 +431,7 @@
     "tools": {
       "background": "Fondo",
       "mockup": "Mockup",
+      "motion": "Motion",
       "videos": "Videos",
       "elements": "Elementos",
       "audio": "Audio",
@@ -437,7 +439,8 @@
       "camera": "Cámara",
       "cursor": "Cursor",
       "toolbar": "Barra de herramientas",
-      "soon": "Pronto"
+      "soon": "Pronto",
+      "newTool": "Nuevo"
     },
     "popovers": {
       "background": {
@@ -447,6 +450,10 @@
       "mockup": {
         "title": "Generador de Mockups",
         "description": "Envuelve tus capturas en navegadores, dispositivos móviles o IDEs"
+      },
+      "motion": {
+        "title": "Generador de Motion",
+        "description": "Añade efectos de movimiento a tus capturas para hacerlas más dinámicas"
       },
       "videos": {
         "title": "Importar Videos",
@@ -564,6 +571,17 @@
     "none": "Ninguno",
     "suggested": "Sugeridos",
     "count": "{count} mockups",
+    "remove": "Eliminar mockup",
+    "frames2D": "Marcos 2D",
+    "devices3D": "Dispositivos 3D",
+    "device3DTitle": "3D Device",
+    "configuration": "Configuration",
+    "reset": "Reset",
+    "scale": "Scale",
+    "laptopOpening": "Laptop opening",
+    "shadow": "Shadow",
+    "position": "Position",
+    "removeFrame": "Remove frame",
     "darkMode": {
       "label": "Modo oscuro",
       "dark": "Oscuro",
@@ -580,8 +598,7 @@
     "sliders": {
       "headerScale": "Escala del encabezado",
       "headerOpacity": "Transparencia del encabezado"
-    },
-    "remove": "Quitar mockup"
+    }
   },
   "videosMenu": {
     "title": "Videos",
@@ -752,7 +769,8 @@
         "home": "Inicio",
         "editor": "Editor",
         "signOut": "Cerrar sesión",
-        "signingOut": "Cerrando sesión..."
+        "signingOut": "Cerrando sesión...",
+        "access": "Acceder"
       }
     },
     "export": {
@@ -968,7 +986,6 @@
       "daysAgo": "{days, plural, =1 {Hace 1 día} other {Hace # días}}"
     },
     "actions": {
-      "addToCanvas": "Añadir al canvas",
       "delete": "Eliminar del historial"
     }
   },
@@ -1092,6 +1109,68 @@
       "nature_landscape": "Paisaje natural",
       "aurora_borealis": "Aurora boreal",
       "gradient_wallpaper": "Fondo degradado"
+    }
+  },
+  "featuresShowcase": {
+    "common": {
+      "videoThumbnail": "Miniatura de video"
+    },
+    "videos": {
+      "titleLine1": "Demostraciones de video",
+      "titleLine2": "pulidas.",
+      "description": "Mira grabaciones de pantalla de alta fidelidad y clips cinematográficos generados por nuestra comunidad."
+    },
+    "images": {
+      "titleLine1": "Exportaciones de imagen",
+      "titleLine2": "estáticas pulidas.",
+      "description": "Perfecto para tus landing pages, redes sociales o registros de cambios. Exporta mockups ultra nítidos con un solo clic."
+    },
+    "alts": {
+      "laptop": "Portátil",
+      "iphone": "iPhone",
+      "browser": "Navegador"
+    }
+  },
+  "featuresGrid": {
+    "ariaLabel": "Características del producto",
+    "titleLine1": "Todo lo que necesitas para lanzar",
+    "titleLine2": "demos impresionantes.",
+    "description": "Graba, mejora y exporta: resultados cinematográficos directamente en tu navegador, sin instalaciones necesarias.",
+    "cards": {
+      "deviceMockups": {
+        "title": "Mockups 3D de dispositivos",
+        "description": "Envuelve tus grabaciones de pantalla en marcos 3D hiperrealistas."
+      },
+      "transparency": {
+        "title": "Transparencia"
+      },
+      "backgrounds": {
+        "title": "Fondos"
+      },
+      "cinematicZoom": {
+        "title": "Zoom cinematográfico"
+      },
+      "elementsLayers": {
+        "title": "Elementos y capas"
+      },
+      "multiTrackTimeline": {
+        "title": "Línea de tiempo multitrack",
+        "description": "Combina varios videos, pistas de audio y haz zoom en el lienzo."
+      }
+    },
+    "alts": {
+      "abstract3dRendering": "Renderizado 3D abstracto",
+      "backgroundLayer3": "Capa de fondo 3",
+      "backgroundLayer2": "Capa de fondo 2",
+      "transparentPreview": "Vista previa transparente",
+      "backgroundPattern": "Patrón de fondo",
+      "bottomRightAsset": "Elemento inferior derecho",
+      "rightAsset": "Elemento derecho"
+    },
+    "tags": {
+      "textOverlay": "Superposición de texto",
+      "svgShapes": "Formas SVG",
+      "blurEffects": "Efectos de desenfoque"
     }
   }
 }

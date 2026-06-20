@@ -1,13 +1,13 @@
 "use client";
 
 import { Icon } from "@iconify/react";
-import { SidebarTool } from "../SidebarTool";
+import { SidebarTool } from "../../../../components/ui/SidebarTool";
 import type { ToolsSidebarProps } from "@/types/tool-sidebar.types";
 import type { EditorMode } from "@/types/editor-mode.types";
 import { useRef, useState, useEffect, useCallback } from "react";
 import { useTranslations } from "next-intl";
 import { TooltipAction } from "@/components/ui/tooltip-action";
-import { useRecording } from "@/hooks/RecordingContext";
+import { useRecording } from "@/app/contexts/RecordingContext";
 import RecordingSetupDialog from "../RecordingSetupDialog";
 
 interface ExtendedToolsSidebarProps extends ToolsSidebarProps {
@@ -259,7 +259,25 @@ export function ToolsSidebar({
                             description: t("popovers.mockup.description"),
                             videoSrc: "/videos/preview-mockup.mp4"
                         }}
+                        badge={t("tools.newTool")}
+                        badgeStyle="premium"
                     />
+
+                    {/* {isPhotoMode && (
+                        <SidebarTool
+                            icon="mage:box-3d"
+                            label={t("tools.motion")}
+                            isActive={activeTool === "motion"}
+                            onClick={() => onToolChange("motion")}
+                            popover={{
+                                title: t("popovers.motion.title"),
+                                description: t("popovers.motion.description"),
+                                videoSrc: "/videos/preview-motion.mp4"
+                            }}
+                            badge={t("tools.newTool")}
+                            badgeStyle="premium"
+                        />
+                    )} */}
 
                     {/* Video-specific tools - hidden in photo mode */}
                     {!isPhotoMode && (

@@ -9,7 +9,7 @@ import { LanguageSwitcher } from "./LanguageSwitcher";
 import { useTranslations } from "next-intl";
 import { Icon } from "@iconify/react";
 import { Button } from "@/components/ui/button";
-import { useRecording } from "@/hooks/RecordingContext";
+import { useRecording } from "@/app/contexts/RecordingContext";
 import RecordingSetupDialog from "../ui/RecordingSetupDialog";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 
@@ -73,7 +73,7 @@ export default function Header() {
         isScrolled ? "border-b border-white/10 bg-[#050505]/80 backdrop-blur-xl py-0" : "bg-transparent border-transparent py-2"
       )}
       >
-        <div className="max-w-6xl px-6 xl:px-0 mx-auto h-16 flex items-center justify-between">
+        <div className="max-w-7xl px-6 xl:px-8 mx-auto h-16 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2 group" aria-label="OpenVid - Go to home">
             <Image src="/svg/logo-openvid.svg" alt="" aria-hidden="true" width={50} height={50} style={{ height: "auto" }} />
             <Image src="/svg/openvid.svg" alt="OpenVid" width={100} height={50} className="hidden sm:flex" style={{ height: "auto" }} />
