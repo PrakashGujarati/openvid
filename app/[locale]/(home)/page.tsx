@@ -27,9 +27,14 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       description: 'Free AI-powered online video editor. Screen recorder, cinematic zooms, professional mockups, and HD export. No watermark.',
       keywords: ['video editor', 'screen recorder', 'professional demos', 'video zoom', 'mockups', 'online video editor', 'free video editor'],
     },
+    ru: {
+      title: 'Создавайте профессиональные демонстрации и редактируйте видео за секунды',
+      description: 'Бесплатный онлайн-редактор видео с ИИ. Запись экрана, кинематические зумы, профессиональные макеты и экспорт в HD. Без водяного знака.',
+      keywords: ['редактор видео', 'запись экрана', 'профессиональные демонстрации', 'зум видео', 'макеты', 'онлайн-редактор видео', 'бесплатный редактор видео'],
+    },
   };
 
-  const { title, description, keywords } = metadata[locale as 'es' | 'en'] || metadata.es;
+  const { title, description, keywords } = metadata[locale as 'es' | 'en' | 'ru'] || metadata.es;
 
   return {
     title,
@@ -40,6 +45,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       languages: {
         es: `${baseUrl}/es`,
         en: `${baseUrl}/en`,
+        ru: `${baseUrl}/ru`,
       },
     },
     openGraph: {
