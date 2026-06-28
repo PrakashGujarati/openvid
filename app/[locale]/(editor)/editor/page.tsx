@@ -17,7 +17,7 @@ import { useVideoThumbnails, type VideoThumbnail } from "@/hooks/useVideoThumbna
 import { useUndoRedo } from "@/hooks/useUndoRedo";
 import { clearAllThumbnailCache } from "@/lib/thumbnail-cache";
 import { addVideoToLibrary, addVideoToLibraryWithMetadata, getLibraryVideoCount, getLibraryVideo, findExistingVideo } from "@/lib/videos-library";
-import { calculateTotalDuration, findNextClipPosition, getClipAtTime, IMAGE_SCENE_MIN_DURATION, type VideoTrackClip } from "@/types/video-track.types";
+import { calculateTotalDuration, findNextClipPosition, getClipAtTime, IMAGE_SCENE_MIN_DURATION, isImageClip, type VideoTrackClip } from "@/types/video-track.types";
 import type { ExportQuality, BackgroundTab, VideoCanvasHandle, BackgroundColorConfig, AspectRatio, CropArea, ZoomFragment, AudioTrack, ImageExportFormat } from "@/types";
 import type { TrimRange } from "@/types/timeline.types";
 import type { MockupConfig, MenuPage } from "@/types/mockup.types";
@@ -922,6 +922,12 @@ export default function Editor() {
         () => videoClips.filter(c => c.type === 'image' && c.imageId).map(c => c.imageId as string),
         [videoClips]
     );
+    // Image scene playback (wall-clock driver + live preview)
+    const [currentSceneImage, setCurrentSceneImage] = useState<HTMLImageElement | null>(null);
+    const [sceneFrameTime, setSceneFrameTime] = useState(0);
+    const imageSceneStartWallRef = useRef(0);
+    const imageSceneStartTimelineRef = useRef(0);
+    const currentSceneClipIdRef = useRef<string | null>(null);
 
     // Multi-video playback: store video blobs and URLs indexed by libraryVideoId
     const videoBlobsRef = useRef<Map<string, Blob>>(new Map());
@@ -2311,9 +2317,33 @@ export default function Editor() {
         return () => window.removeEventListener('paste', handlePaste);
     }, [isPhotoMode, handleImageUploadToCanvas]);
 
+    const enterImageScene = useCallback((clip: VideoTrackClip, timelineTime: number, playing: boolean) => {
+        if (videoRef.current && !videoRef.current.paused) videoRef.current.pause();
+        const img = clip.imageId ? imageElementsRef.current.get(clip.imageId) ?? null : null;
+        currentSceneClipIdRef.current = clip.id;
+        setCurrentSceneImage(img);
+        setSceneFrameTime(timelineTime - clip.startTime);
+        imageSceneStartTimelineRef.current = timelineTime;
+        imageSceneStartWallRef.current = performance.now();
+        syncAudioPlayback(timelineTime, playing);
+    }, [syncAudioPlayback]);
+
+    const exitImageScene = useCallback(() => {
+        currentSceneClipIdRef.current = null;
+        setCurrentSceneImage(null);
+    }, []);
+
     const togglePlayPause = useCallback(() => {
         if (videoRef.current) {
             if (isPlaying) {
+                if (currentSceneClipIdRef.current) {
+                    const tl = imageSceneStartTimelineRef.current + (performance.now() - imageSceneStartWallRef.current) / 1000;
+                    setCurrentTime(tl);
+                    syncAudioPlayback(tl, false);
+                    setIsPlaying(false);
+                    videoRef.current.pause();
+                    return;
+                }
                 videoRef.current.pause();
                 const clips = videoClipsRef.current;
                 if (clips.length > 0 && activeClipDataRef.current) {
@@ -2338,6 +2368,12 @@ export default function Editor() {
 
                 if (clips.length > 0) {
                     const clipAtTime = findActiveClipAtTime(startTime);
+                    if (clipAtTime && isImageClip(clipAtTime)) {
+                        enterImageScene(clipAtTime, startTime, true);
+                        setIsPlaying(true);
+                        animationFrameRef.current = requestAnimationFrame(updateTimeSmoothRef.current);
+                        return; // do NOT run the video play() path; the RAF loop drives the scene
+                    }
                     if (clipAtTime) {
                         if (clipAtTime.id !== activeClipIdRef.current) {
                             const url = videoUrlsRef.current.get(clipAtTime.libraryVideoId);
@@ -2391,7 +2427,7 @@ export default function Editor() {
             }
             setIsPlaying(!isPlaying);
         }
-    }, [isPlaying, currentTime, trimRange.start, trimRange.end, syncAudioPlayback, findActiveClipAtTime, timelineToClipTime]);
+    }, [isPlaying, currentTime, trimRange.start, trimRange.end, syncAudioPlayback, findActiveClipAtTime, timelineToClipTime, enterImageScene]);
 
     const updateTimeSmoothRef = useRef<() => void>(() => { });
 
@@ -2409,6 +2445,89 @@ export default function Editor() {
                 const clips = videoClipsRef.current;
 
                 if (clips.length > 0) {
+                    // --- Image scene: wall-clock driver (no video clock) ---
+                    if (currentSceneClipIdRef.current) {
+                        const sceneClip = clips.find(c => c.id === currentSceneClipIdRef.current);
+                        if (sceneClip && isImageClip(sceneClip)) {
+                            const sceneLen = sceneClip.trimEnd - sceneClip.trimStart;
+                            const sceneEnd = sceneClip.startTime + sceneLen;
+                            const tl = imageSceneStartTimelineRef.current + (performance.now() - imageSceneStartWallRef.current) / 1000;
+
+                            const stopAt = (t: number) => {
+                                exitImageScene();
+                                videoRef.current?.pause();
+                                syncAudioPlayback(t, false);
+                                setIsPlaying(false);
+                                justEndedRef.current = true;
+                                setCurrentTime(t);
+                                setTimeout(() => { justEndedRef.current = false; }, 300);
+                            };
+
+                            if (trimRange.end > 0 && tl >= trimRange.end) { stopAt(trimRange.end); return; }
+
+                            if (tl >= sceneEnd) {
+                                const sorted = [...clips].sort((a, b) => a.startTime - b.startTime);
+                                const idx = sorted.findIndex(c => c.id === sceneClip.id);
+                                const next = sorted[idx + 1];
+                                if (!next) { stopAt(sceneEnd); return; }
+                                if (isImageClip(next)) {
+                                    enterImageScene(next, next.startTime, true);
+                                    animationFrameRef.current = requestAnimationFrame(updateTimeSmoothRef.current);
+                                    return;
+                                }
+                                // hand off to a VIDEO clip using the existing switch pattern
+                                const nextUrl = videoUrlsRef.current.get(next.libraryVideoId);
+                                if (nextUrl && videoRef.current) {
+                                    exitImageScene();
+                                    activeClipIdRef.current = next.id;
+                                    activeClipDataRef.current = next;
+                                    clipSwitchTimeRef.current = next.startTime;
+                                    isSwitchingClipRef.current = true;
+                                    const cv = videoRef.current;
+                                    cv.pause();
+                                    cv.src = nextUrl;
+                                    const startPlayback = () => {
+                                        clipSwitchTimeRef.current = null;
+                                        isSwitchingClipRef.current = false;
+                                        justEndedRef.current = false;
+                                        cv.playbackRate = 1.0;
+                                        const a = clipAudioStateRef.current.get(next.libraryVideoId);
+                                        cv.muted = muteOriginalAudioRef.current || a === false;
+                                        cv.play().catch(() => {});
+                                        setIsPlaying(true);
+                                        animationFrameRef.current = requestAnimationFrame(updateTimeSmoothRef.current);
+                                    };
+                                    const onCanPlay = () => {
+                                        const t = next.trimStart;
+                                        if (t < 0.01) { cv.currentTime = 0; startPlayback(); }
+                                        else {
+                                            const onSeeked = () => { startPlayback(); cv.removeEventListener('seeked', onSeeked); };
+                                            cv.addEventListener('seeked', onSeeked);
+                                            cv.currentTime = t;
+                                        }
+                                        cv.removeEventListener('canplay', onCanPlay);
+                                    };
+                                    cv.addEventListener('canplay', onCanPlay);
+                                    setCurrentTime(next.startTime);
+                                    animationFrameRef.current = requestAnimationFrame(updateTimeSmoothRef.current);
+                                    return;
+                                }
+                                // next video clip has no loaded URL yet — just stop gracefully
+                                stopAt(sceneEnd);
+                                return;
+                            }
+
+                            // still within the scene: advance time by wall clock
+                            setCurrentTime(tl);
+                            setSceneFrameTime(tl - sceneClip.startTime);
+                            syncAudioPlayback(tl, true);
+                            animationFrameRef.current = requestAnimationFrame(updateTimeSmoothRef.current);
+                            return;
+                        }
+                        // scene clip vanished (deleted): fall through to normal handling
+                        exitImageScene();
+                    }
+
                     const currentVideoTime = videoRef.current.currentTime;
 
                     let activeClip: VideoTrackClip | null = null;
@@ -2462,6 +2581,12 @@ export default function Editor() {
                             const nextClip = sortedClips[currentIndex + 1];
 
                             if (nextClip) {
+                                if (isImageClip(nextClip)) {
+                                    videoRef.current.pause();
+                                    enterImageScene(nextClip, nextClip.startTime, true);
+                                    animationFrameRef.current = requestAnimationFrame(updateTimeSmoothRef.current);
+                                    return;
+                                }
                                 const nextUrl = videoUrlsRef.current.get(nextClip.libraryVideoId);
                                 const nextBlob = videoBlobsRef.current.get(nextClip.libraryVideoId);
 
@@ -2559,7 +2684,7 @@ export default function Editor() {
                 animationFrameRef.current = requestAnimationFrame(updateTimeSmoothRef.current);
             }
         };
-    }, [isPlaying, isDraggingPlayhead, trimRange.end, syncAudioPlayback]);
+    }, [isPlaying, isDraggingPlayhead, trimRange.end, syncAudioPlayback, enterImageScene, exitImageScene]);
 
     // Start/stop animation frame loop based on playing state
     useEffect(() => {
@@ -2580,6 +2705,7 @@ export default function Editor() {
     }, [isPlaying, isDraggingPlayhead]);
 
     const handleTimeUpdate = () => {
+        if (currentSceneClipIdRef.current) return;
         if (videoRef.current && !isPlaying && !justEndedRef.current && !isSeekingToClipRef.current) {
             const clips = videoClipsRef.current;
             if (clips.length > 0 && activeClipDataRef.current) {
@@ -2619,8 +2745,19 @@ export default function Editor() {
             if (clips.length > 0) {
                 const clipAtTime = findActiveClipAtTime(finalTime);
 
+                if (clipAtTime && isImageClip(clipAtTime)) {
+                    enterImageScene(clipAtTime, finalTime, wasPlayingBeforeDragRef.current);
+                    if (wasPlayingBeforeDragRef.current) {
+                        setIsPlaying(true);
+                        animationFrameRef.current = requestAnimationFrame(updateTimeSmoothRef.current);
+                    }
+                    return;
+                }
+
                 if (clipAtTime) {
                     const clipTime = timelineToClipTime(finalTime, clipAtTime);
+
+                    if (currentSceneClipIdRef.current) exitImageScene();
 
                     if (clipAtTime.id !== activeClipIdRef.current) {
                         const url = videoUrlsRef.current.get(clipAtTime.libraryVideoId);
@@ -2677,7 +2814,7 @@ export default function Editor() {
         } else {
             syncAudioPlayback(finalTime, false);
         }
-    }, [syncAudioPlayback, findActiveClipAtTime, timelineToClipTime]);
+    }, [syncAudioPlayback, findActiveClipAtTime, timelineToClipTime, enterImageScene, exitImageScene]);
 
     const handleZoomChange = useCallback((zoom: number) => {
         setTimelineZoom(zoom);
@@ -3240,6 +3377,8 @@ export default function Editor() {
                         ref={canvasRef}
                         videoUrl={videoUrl}
                         videoRef={videoRef}
+                        currentSceneImage={currentSceneImage}
+                        sceneFrameTime={sceneFrameTime}
                         mediaType={isPhotoMode ? "image" : "video"}
                         imageUrl={imageUrl}
                         imageRef={imageRef}

@@ -2019,7 +2019,7 @@ const VideoCanvasInner = forwardRef<VideoCanvasHandle, VideoCanvasProps>(functio
                                                                                     ? { objectViewBox: `inset(${cropArea.y}% ${100 - cropArea.x - cropArea.width}% ${100 - cropArea.y - cropArea.height}% ${cropArea.x}%)` }
                                                                                     : {}),
                                                                                 ...(hasMask && !hasMockup ? maskStyles : {}),
-                                                                                opacity: currentThumbnail ? 0 : 1,
+                                                                                opacity: (currentThumbnail || currentSceneImage) ? 0 : 1,
                                                                             }}
                                                                             onTimeUpdate={onTimeUpdate}
                                                                             onLoadedMetadata={onLoadedMetadata}
@@ -2029,6 +2029,15 @@ const VideoCanvasInner = forwardRef<VideoCanvasHandle, VideoCanvasProps>(functio
                                                                             <img
                                                                                 src={currentThumbnail.dataUrl}
                                                                                 alt="Preview"
+                                                                                crossOrigin="anonymous"
+                                                                                className="absolute inset-0 w-full h-full object-contain"
+                                                                                style={hasMask && !hasMockup ? maskStyles : {}}
+                                                                            />
+                                                                        )}
+                                                                        {currentSceneImage && (
+                                                                            <img
+                                                                                src={currentSceneImage.src}
+                                                                                alt="Scene"
                                                                                 crossOrigin="anonymous"
                                                                                 className="absolute inset-0 w-full h-full object-contain"
                                                                                 style={hasMask && !hasMockup ? maskStyles : {}}
