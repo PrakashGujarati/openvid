@@ -3,6 +3,7 @@
 import { useState, useRef, useCallback, useMemo, useEffect } from "react";
 import { motion, useMotionValue, useTransform } from "framer-motion";
 import type { VideoTrackClip } from "@/types/video-track.types";
+import { isImageClip, IMAGE_SCENE_MIN_DURATION } from "@/types/video-track.types";
 import { Icon } from "@iconify/react";
 import type { MotionValue } from "framer-motion";
 
@@ -50,6 +51,7 @@ export function VideoClipTrackItem({
         return (time / totalDuration) * contentWidth;
     }, [totalDuration, contentWidth]);
 
+    const isImage = isImageClip(clip);
     const clipDuration = clip.trimEnd - clip.trimStart;
 
     const pixelsToTime = useCallback((pixels: number) => {
@@ -135,6 +137,8 @@ export function VideoClipTrackItem({
         });
     }, [clipX, pixelsToTime, onUpdate, onDragStateChange]);
 
+    const effectiveMinDuration = isImage ? IMAGE_SCENE_MIN_DURATION : MIN_CLIP_DURATION;
+
     // Resize handlers
     const handleResizeStartDrag = useCallback((_e: MouseEvent | TouchEvent | PointerEvent, info: { delta: { x: number } }) => {
         if (contentWidth === 0 || totalDuration === 0) return;
@@ -145,7 +149,7 @@ export function VideoClipTrackItem({
         let newX = currentX + info.delta.x;
         let newWidth = currentWidth - info.delta.x;
 
-        const minWidth = timeToPixels(MIN_CLIP_DURATION);
+        const minWidth = timeToPixels(effectiveMinDuration);
         if (newWidth < minWidth) {
             newWidth = minWidth;
             newX = currentX + currentWidth - minWidth;
@@ -159,7 +163,7 @@ export function VideoClipTrackItem({
 
         clipX.set(newX);
         clipWidth.set(newWidth);
-    }, [contentWidth, totalDuration, clipX, clipWidth, boundaries, timeToPixels]);
+    }, [contentWidth, totalDuration, clipX, clipWidth, boundaries, timeToPixels, effectiveMinDuration]);
 
     const handleResizeEndDrag = useCallback((_e: MouseEvent | TouchEvent | PointerEvent, info: { delta: { x: number } }) => {
         if (contentWidth === 0 || totalDuration === 0) return;
@@ -168,7 +172,7 @@ export function VideoClipTrackItem({
         const currentWidth = clipWidth.get();
         let newWidth = currentWidth + info.delta.x;
 
-        const minWidth = timeToPixels(MIN_CLIP_DURATION);
+        const minWidth = timeToPixels(effectiveMinDuration);
         newWidth = Math.max(minWidth, newWidth);
 
         // Limit by boundary with other clips (if there's a next clip)
@@ -177,12 +181,14 @@ export function VideoClipTrackItem({
             newWidth = Math.min(newWidth, maxWidthByBoundary);
         }
 
-        const maxAvailableDuration = clip.duration - clip.trimStart;
-        const maxWidthBySource = timeToPixels(maxAvailableDuration);
-        newWidth = Math.min(newWidth, maxWidthBySource);
+        if (!isImage) {
+            const maxAvailableDuration = clip.duration - clip.trimStart;
+            const maxWidthBySource = timeToPixels(maxAvailableDuration);
+            newWidth = Math.min(newWidth, maxWidthBySource);
+        }
 
         clipWidth.set(newWidth);
-    }, [contentWidth, totalDuration, clipWidth, clipX, boundaries, timeToPixels, clip.duration, clip.trimStart]);
+    }, [contentWidth, totalDuration, clipWidth, clipX, boundaries, timeToPixels, clip.duration, clip.trimStart, effectiveMinDuration, isImage]);
 
     const handleResizeStart = useCallback((handle: 'start' | 'end') => {
         setIsResizing(handle);
@@ -192,6 +198,17 @@ export function VideoClipTrackItem({
     const handleResizeEnd = useCallback(() => {
         setIsResizing(null);
         onDragStateChange?.(false);
+
+        if (isImage) {
+            const newDuration = Math.max(IMAGE_SCENE_MIN_DURATION, pixelsToTime(clipWidth.get()));
+            onUpdate({
+                startTime: Math.max(0, pixelsToTime(clipX.get())),
+                trimStart: 0,
+                trimEnd: newDuration,
+                duration: newDuration,
+            });
+            return;
+        }
 
         const newStartTime = pixelsToTime(clipX.get());
         const newDuration = pixelsToTime(clipWidth.get());
@@ -206,7 +223,7 @@ export function VideoClipTrackItem({
             trimStart: newTrimStart,
             trimEnd: newTrimEnd,
         });
-    }, [clipX, clipWidth, pixelsToTime, clip, onUpdate, onDragStateChange]);
+    }, [clipX, clipWidth, pixelsToTime, clip, onUpdate, onDragStateChange, isImage]);
 
     const isInteracting = isDragging || isResizing !== null;
 
@@ -227,8 +244,8 @@ export function VideoClipTrackItem({
             style={{
                 x: clipX,
                 width: clipWidth,
-                border: '1px solid rgba(52, 168, 83, 0.4)',
-                background: '#182e20',
+                border: isImage ? '1px solid rgba(168,85,247,0.4)' : '1px solid rgba(52, 168, 83, 0.4)',
+                background: isImage ? '#241830' : '#182e20',
             }}
             drag="x"
             dragConstraints={{ left: 0, right: contentWidth }}
@@ -268,11 +285,19 @@ export function VideoClipTrackItem({
                 }}
             />
 
+            {isImage && clip.thumbnailUrl && (
+                <img
+                    src={clip.thumbnailUrl}
+                    alt=""
+                    className="absolute inset-0 w-full h-full object-cover opacity-40 pointer-events-none"
+                />
+            )}
+
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
-                <span className="flex items-center gap-2 text-emerald-400 text-[11px] font-medium drop-shadow-sm">
-                    <Icon icon="solar:videocamera-record-bold" width="12" className="opacity-70" />
+                <span className={`flex items-center gap-2 text-[11px] font-medium drop-shadow-sm ${isImage ? 'text-purple-300' : 'text-emerald-400'}`}>
+                    <Icon icon={isImage ? "solar:gallery-bold" : "solar:videocamera-record-bold"} width="12" className="opacity-70" />
                     <span className="truncate max-w-30">{clip.name}</span>
-                    <span className="text-emerald-400/60 font-mono text-[10px]">
+                    <span className={`font-mono text-[10px] ${isImage ? 'text-purple-300/60' : 'text-emerald-400/60'}`}>
                         {formatDuration(clipDuration)}
                     </span>
                 </span>
