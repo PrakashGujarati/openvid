@@ -20,6 +20,7 @@ import {
     ZoomFragmentEditorSkeleton,
     AudioMenuSkeleton,
     VideosMenuSkeleton,
+    ImagesMenuSkeleton,
     HistoryMenuSkeleton
 } from "../Skeleton";
 
@@ -38,6 +39,7 @@ const WallpaperCatalogGrid = lazy(() => import("../WalpaperSections").then(mod =
 const MockupMenu = lazy(() => import("./MockupMenu").then(mod => ({ default: mod.MockupMenu })));
 const AudioMenu = lazy(() => import("./AudioMenu").then(mod => ({ default: mod.AudioMenu })));
 const VideosMenu = lazy(() => import("./VideosMenu").then(mod => ({ default: mod.VideosMenu })));
+const ImagesMenu = lazy(() => import("./ImagesMenu").then(mod => ({ default: mod.ImagesMenu })));
 const HistoryMenu = lazy(() => import("./HistoryMenu").then(mod => ({ default: mod.HistoryMenu })));
 
 interface ExtendedControlPanelProps extends ControlPanelProps {
@@ -117,6 +119,13 @@ export function ControlPanel({
     videosLibraryRefresh,
     isVideoUploading = false,
     onVideoAudioToggle,
+    // Images library props
+    onAddImageToTrack,
+    onImageUploadToLibrary,
+    onImageDeleteFromLibrary,
+    imagesInTrackIds = [],
+    imagesLibraryRefresh,
+    isImageUploading = false,
     // Camera overlay props
     cameraUrl = null,
     cameraConfig = null,
@@ -316,6 +325,19 @@ export function ControlPanel({
                             refreshTrigger={videosLibraryRefresh}
                             isUploading={isVideoUploading}
                             onVideoAudioToggle={onVideoAudioToggle}
+                        />
+                    </Suspense>
+                )}
+
+                {activeTool === "images" && (
+                    <Suspense fallback={<ImagesMenuSkeleton />}>
+                        <ImagesMenu
+                            onAddImageToTrack={onAddImageToTrack}
+                            onImageUpload={onImageUploadToLibrary}
+                            onImageDeleteFromLibrary={onImageDeleteFromLibrary}
+                            imagesInTrackIds={imagesInTrackIds}
+                            refreshTrigger={imagesLibraryRefresh}
+                            isUploading={isImageUploading}
                         />
                     </Suspense>
                 )}

@@ -17,7 +17,7 @@ import { useVideoThumbnails, type VideoThumbnail } from "@/hooks/useVideoThumbna
 import { useUndoRedo } from "@/hooks/useUndoRedo";
 import { clearAllThumbnailCache } from "@/lib/thumbnail-cache";
 import { addVideoToLibrary, addVideoToLibraryWithMetadata, getLibraryVideoCount, getLibraryVideo, findExistingVideo } from "@/lib/videos-library";
-import { calculateTotalDuration, findNextClipPosition, getClipAtTime, type VideoTrackClip } from "@/types/video-track.types";
+import { calculateTotalDuration, findNextClipPosition, getClipAtTime, IMAGE_SCENE_MIN_DURATION, type VideoTrackClip } from "@/types/video-track.types";
 import type { ExportQuality, BackgroundTab, VideoCanvasHandle, BackgroundColorConfig, AspectRatio, CropArea, ZoomFragment, AudioTrack, ImageExportFormat } from "@/types";
 import type { TrimRange } from "@/types/timeline.types";
 import type { MockupConfig, MenuPage } from "@/types/mockup.types";
@@ -913,6 +913,16 @@ export default function Editor() {
     }, [videoClips]);
     const [selectedVideoClipId, setSelectedVideoClipId] = useState<string | null>(null);
 
+    // Image scenes (image clips on the video track) state
+    const [imagesLibraryRefresh, setImagesLibraryRefresh] = useState(0);
+    const [isImageUploading, setIsImageUploading] = useState(false);
+    const [newImagesCount, setNewImagesCount] = useState(0);
+    const imageElementsRef = useRef<Map<string, HTMLImageElement>>(new Map());
+    const imagesInTrackIds = useMemo(
+        () => videoClips.filter(c => c.type === 'image' && c.imageId).map(c => c.imageId as string),
+        [videoClips]
+    );
+
     // Multi-video playback: store video blobs and URLs indexed by libraryVideoId
     const videoBlobsRef = useRef<Map<string, Blob>>(new Map());
     const videoUrlsRef = useRef<Map<string, string>>(new Map());
@@ -1493,7 +1503,9 @@ export default function Editor() {
         const loadClipBlobs = async () => {
             const currentBlobs = videoBlobsRef.current;
             const currentUrls = videoUrlsRef.current;
-            const neededIds = new Set(videoClips.map(c => c.libraryVideoId));
+            const neededIds = new Set(
+                videoClips.filter(c => c.type !== 'image' && c.libraryVideoId).map(c => c.libraryVideoId)
+            );
 
             for (const [id, url] of currentUrls.entries()) {
                 if (!neededIds.has(id)) {
@@ -1504,6 +1516,7 @@ export default function Editor() {
             }
 
             for (const clip of videoClips) {
+                if (clip.type === 'image' || !clip.libraryVideoId) continue;
                 if (!currentBlobs.has(clip.libraryVideoId)) {
                     try {
                         const libraryVideo = await getLibraryVideo(clip.libraryVideoId);
@@ -1514,6 +1527,19 @@ export default function Editor() {
                         }
                     } catch (e) {
                         console.warn("Failed to load video blob for clip:", clip.id, e);
+                    }
+                }
+            }
+
+            // Preload image elements for image scene clips
+            for (const clip of videoClips) {
+                if (clip.type === 'image' && clip.imageId && !imageElementsRef.current.has(clip.imageId)) {
+                    const { getLibraryImage } = await import("@/lib/images-library");
+                    const libImage = await getLibraryImage(clip.imageId);
+                    if (libImage) {
+                        const img = new window.Image();
+                        img.src = libImage.thumbnailUrl;
+                        imageElementsRef.current.set(clip.imageId, img);
                     }
                 }
             }
@@ -1796,6 +1822,81 @@ export default function Editor() {
             return updatedClips;
         });
     }, [clearHistory]);
+
+    // Handler to upload an image to the images library (from ImagesMenu / sidebar)
+    const handleImageUploadToLibrary = useCallback(async (file: File) => {
+        setIsImageUploading(true);
+        try {
+            const { addLibraryImage } = await import("@/lib/images-library");
+            await addLibraryImage(file);
+            setImagesLibraryRefresh(n => n + 1);
+            setNewImagesCount(n => n + 1);
+            setActiveTool("images");
+        } catch (e) {
+            console.error("Image upload failed:", e);
+        } finally {
+            setIsImageUploading(false);
+        }
+    }, [setActiveTool]);
+
+    // Handler to remove image scene clips when an image is deleted from the library
+    const handleImageDeleteFromLibrary = useCallback((imageId: string) => {
+        setVideoClips(prev => {
+            const remaining = prev.filter(c => c.imageId !== imageId);
+            if (remaining.length !== prev.length) {
+                setTimeout(() => {
+                    const total = calculateTotalDuration(remaining);
+                    setVideoDuration(total);
+                    setTrimRange({ start: 0, end: total });
+                }, 0);
+            }
+            return remaining;
+        });
+    }, []);
+
+    // Handler to append an image scene clip to the video track
+    const handleAddImageToTrack = useCallback(async (imageId: string) => {
+        const { getLibraryImage } = await import("@/lib/images-library");
+        const libImage = await getLibraryImage(imageId);
+        if (!libImage) return;
+
+        // Preload the HTMLImageElement for playback/export
+        if (!imageElementsRef.current.has(imageId)) {
+            const img = new window.Image();
+            img.src = libImage.thumbnailUrl; // object URL of the full image blob
+            await new Promise<void>((resolve) => {
+                if (img.complete) resolve();
+                else { img.onload = () => resolve(); img.onerror = () => resolve(); }
+            });
+            imageElementsRef.current.set(imageId, img);
+        }
+
+        const sceneDuration = IMAGE_SCENE_MIN_DURATION;
+
+        setVideoClips(prevClips => {
+            const startTime = findNextClipPosition(prevClips);
+            const newClip: VideoTrackClip = {
+                id: crypto.randomUUID(),
+                libraryVideoId: '',
+                imageId,
+                type: 'image',
+                name: libImage.fileName,
+                startTime,
+                duration: sceneDuration,
+                trimStart: 0,
+                trimEnd: sceneDuration,
+                thumbnailUrl: libImage.thumbnailUrl,
+            };
+            const updatedClips = [...prevClips, newClip];
+            setTimeout(() => {
+                const total = calculateTotalDuration(updatedClips);
+                setVideoDuration(total);
+                setTrimRange({ start: 0, end: total });
+                setNewImagesCount(0);
+            }, 0);
+            return updatedClips;
+        });
+    }, []);
 
     // Handlers for video clip management
     const handleSelectVideoClip = useCallback((clipId: string | null) => {
@@ -2979,6 +3080,9 @@ export default function Editor() {
                         onImageUpload={handleImageUploadToCanvas}
                         onScreenCapture={handleScreenCapture}
                         isCapturing={isCapturing}
+                        onImageSceneUpload={handleImageUploadToLibrary}
+                        isImageUploading={isImageUploading}
+                        newImagesCount={newImagesCount}
                     />
                 </div>
 
@@ -3063,6 +3167,12 @@ export default function Editor() {
                                         videosInTrackIds={videosInTrackIds}
                                         videosLibraryRefresh={videosLibraryRefresh}
                                         isVideoUploading={isUploading}
+                                        onAddImageToTrack={handleAddImageToTrack}
+                                        onImageUploadToLibrary={handleImageUploadToLibrary}
+                                        onImageDeleteFromLibrary={handleImageDeleteFromLibrary}
+                                        imagesInTrackIds={imagesInTrackIds}
+                                        imagesLibraryRefresh={imagesLibraryRefresh}
+                                        isImageUploading={isImageUploading}
                                         cameraUrl={cameraUrl}
                                         cameraConfig={cameraConfig}
                                         onCameraConfigChange={handleCameraConfigChange}

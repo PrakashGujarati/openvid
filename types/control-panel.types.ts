@@ -86,6 +86,13 @@ export interface ControlPanelProps {
     videosLibraryRefresh?: number;
     isVideoUploading?: boolean;
     onVideoAudioToggle?: (videoId: string, hasAudio: boolean) => void;
+    // Images library props (image scenes)
+    onAddImageToTrack?: (imageId: string) => void;
+    onImageUploadToLibrary?: (file: File) => void;
+    onImageDeleteFromLibrary?: (imageId: string) => void;
+    imagesInTrackIds?: string[];
+    imagesLibraryRefresh?: number;
+    isImageUploading?: boolean;
     // Camera overlay props
     cameraUrl?: string | null;
     cameraConfig?: CameraConfig | null;
