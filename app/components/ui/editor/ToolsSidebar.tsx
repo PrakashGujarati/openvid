@@ -24,6 +24,10 @@ interface ExtendedToolsSidebarProps extends ToolsSidebarProps {
     onImageUpload?: (file: File) => void;
     onScreenCapture?: () => void;
     isCapturing?: boolean;
+    // Image scenes props
+    onImageSceneUpload?: (file: File) => void;
+    isImageUploading?: boolean;
+    newImagesCount?: number;
 }
 
 export function ToolsSidebar({
@@ -42,6 +46,10 @@ export function ToolsSidebar({
     onImageUpload,
     onScreenCapture,
     isCapturing = false,
+    // Image scenes props
+    onImageSceneUpload,
+    isImageUploading = false,
+    newImagesCount = 0,
 }: ExtendedToolsSidebarProps) {
     const t = useTranslations("toolsSidebar");
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -49,6 +57,7 @@ export function ToolsSidebar({
     const zoomToolRef = useRef<HTMLButtonElement>(null);
     const audioToolRef = useRef<HTMLButtonElement>(null);
     const videosToolRef = useRef<HTMLButtonElement>(null);
+    const imagesToolRef = useRef<HTMLButtonElement>(null);
     const cameraToolRef = useRef<HTMLButtonElement>(null);
     const elementsToolRef = useRef<HTMLButtonElement>(null);
     const [isDragging, setIsDragging] = useState(false);
@@ -107,6 +116,13 @@ export function ToolsSidebar({
     const handleUploadClick = () => {
         fileInputRef.current?.click();
     };
+
+    const imageSceneInputRef = useRef<HTMLInputElement>(null);
+    const handleImageSceneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file && onImageSceneUpload) { onImageSceneUpload(file); e.target.value = ''; }
+    };
+    const handleImageSceneClick = () => imageSceneInputRef.current?.click();
 
     // Photo mode handlers
     const handleImageFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -296,6 +312,22 @@ export function ToolsSidebar({
                         />
                     )}
 
+                    {!isPhotoMode && (
+                        <SidebarTool
+                            icon="solar:gallery-outline"
+                            label={t("tools.images")}
+                            isActive={activeTool === "images"}
+                            onClick={() => onToolChange("images")}
+                            ref={imagesToolRef}
+                            badgeCount={activeTool !== "images" ? newImagesCount : undefined}
+                            popover={{
+                                title: t("popovers.images.title"),
+                                description: t("popovers.images.description"),
+                                videoSrc: "/videos/preview-videos.mp4"
+                            }}
+                        />
+                    )}
+
                     <SidebarTool
                         label={t("tools.elements")}
                         isActive={activeTool === "elements"}
@@ -432,6 +464,34 @@ export function ToolsSidebar({
                                 )}
                             </button>
                         </TooltipAction>
+
+                        <TooltipAction label={t("upload.imageTooltip")}>
+                            <button
+                                onClick={handleImageSceneClick}
+                                disabled={isImageUploading}
+                                className={`w-full flex flex-col items-center text-center justify-center gap-1.5 p-2 rounded-xl cursor-pointer transition-all group disabled:opacity-50 disabled:cursor-not-allowed border-2 border-transparent text-white/60 hover:bg-purple-500/20 hover:text-purple-400`}
+                                aria-label={t("upload.imageButton")}
+                            >
+                                {isImageUploading ? (
+                                    <>
+                                        <Icon icon="svg-spinners:ring-resize" width="24" height="24" />
+                                        <span className="text-xs font-medium">{t("upload.buttonUploading")}</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <Icon icon="mage:image-upload" width="24" height="24" className="group-hover:scale-105 transition-transform duration-300" />
+                                        <span className="text-xs font-medium">{t("upload.imageButton")}</span>
+                                    </>
+                                )}
+                            </button>
+                        </TooltipAction>
+                        <input
+                            ref={imageSceneInputRef}
+                            type="file"
+                            accept="image/png,image/jpeg,image/webp,image/gif,image/avif"
+                            className="hidden"
+                            onChange={handleImageSceneChange}
+                        />
 
                         <input
                             ref={fileInputRef}
