@@ -8,6 +8,8 @@ export interface VideoTrackClip {
     trimEnd: number;
     thumbnailUrl?: string;
     hasCamera?: boolean;
+    type?: 'video' | 'image';
+    imageId?: string;
 }
 
 export function calculateTotalDuration(clips: VideoTrackClip[]): number {
@@ -52,4 +54,14 @@ export function getActiveClipAtTime(
 
 export function sortClipsByTime(clips: VideoTrackClip[]): VideoTrackClip[] {
     return [...clips].sort((a, b) => a.startTime - b.startTime);
+}
+
+export const IMAGE_SCENE_MIN_DURATION = 5;
+
+export function isImageClip(clip: VideoTrackClip): boolean {
+    return clip.type === 'image';
+}
+
+export function clampImageSceneDuration(seconds: number): number {
+    return Math.max(seconds, IMAGE_SCENE_MIN_DURATION);
 }
