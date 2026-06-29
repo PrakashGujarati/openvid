@@ -443,7 +443,8 @@
       "toolbar": "Tools toolbar",
       "soon": "Soon",
       "motion": "Motion",
-      "newTool": "New"
+      "newTool": "New",
+      "images": "Images"
     },
     "popovers": {
       "background": {
@@ -481,6 +482,10 @@
       "motion": {
         "title": "Motion Effects",
         "description": "Apply smooth transitions and animations to your elements."
+      },
+      "images": {
+        "title": "Image scenes",
+        "description": "Add images as scenes on your timeline"
       }
     },
     "recording": {
@@ -496,7 +501,9 @@
       "tooltipUploading": "Uploading video...",
       "button": "Upload",
       "buttonUploading": "Uploading...",
-      "dropHere": "Drop here"
+      "dropHere": "Drop here",
+      "imageTooltip": "Upload an image scene",
+      "imageButton": "Image"
     },
     "alerts": {
       "mobile": "Screen capture is not supported on mobile. Use your computer."
@@ -663,6 +670,23 @@
       "delete": "Delete video"
     },
     "footer": "Videos are stored locally in your browser"
+  },
+  "imagesMenu": {
+    "title": "Images",
+    "dropzone": "Drop image to upload",
+    "emptyState": {
+      "title": "Upload an image",
+      "instruction": "PNG, JPG, WEBP, GIF or AVIF"
+    },
+    "upload": {
+      "action": "Upload image",
+      "button": "Upload image"
+    },
+    "actions": {
+      "add": "Add",
+      "delete": "Delete"
+    },
+    "footer": "Images are stored locally in your browser"
   },
   "elementsMenu": {
     "title": "Elements",

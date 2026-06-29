@@ -440,7 +440,8 @@
       "cursor": "Cursor",
       "toolbar": "Barra de herramientas",
       "soon": "Pronto",
-      "newTool": "Nuevo"
+      "newTool": "Nuevo",
+      "images": "Imágenes"
     },
     "popovers": {
       "background": {
@@ -478,6 +479,10 @@
       "history": {
         "title": "Historial de imágenes",
         "description": "Accede a tus capturas anteriores para reutilizarlas o editarlas."
+      },
+      "images": {
+        "title": "Escenas de imagen",
+        "description": "Agrega imágenes como escenas en tu línea de tiempo"
       }
     },
     "recording": {
@@ -493,7 +498,9 @@
       "tooltipUploading": "Subiendo video...",
       "button": "Subir",
       "buttonUploading": "Subiendo...",
-      "dropHere": "Suelta aquí"
+      "dropHere": "Suelta aquí",
+      "imageTooltip": "Sube una escena de imagen",
+      "imageButton": "Imagen"
     },
     "alerts": {
       "mobile": "La captura de pantalla no está soportada en móviles. Usa tu computadora."
@@ -619,6 +626,23 @@
       "delete": "Eliminar video"
     },
     "footer": "Los videos se almacenan localmente en tu navegador"
+  },
+  "imagesMenu": {
+    "title": "Imágenes",
+    "dropzone": "Suelta la imagen para subirla",
+    "emptyState": {
+      "title": "Sube una imagen",
+      "instruction": "PNG, JPG, WEBP, GIF o AVIF"
+    },
+    "upload": {
+      "action": "Subir imagen",
+      "button": "Subir imagen"
+    },
+    "actions": {
+      "add": "Añadir",
+      "delete": "Eliminar"
+    },
+    "footer": "Las imágenes se guardan localmente en tu navegador"
   },
   "elementsMenu": {
     "title": "Elementos",
