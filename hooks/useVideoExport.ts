@@ -5,7 +5,7 @@ import { Output, Mp4OutputFormat, BufferTarget, CanvasSource } from "mediabunny"
 import type { VideoCanvasHandle } from "@/types";
 import type { ExportQuality, ExportSettings, ExportProgress } from "@/types";
 import type { VideoTrackClip } from "@/types/video-track.types";
-import { isImageClip } from "@/types/video-track.types";
+import { isImageClip, calculateTotalDuration } from "@/types/video-track.types";
 import { QUALITY_SETTINGS, DEFAULT_EXPORT_FPS } from "@/lib/constants";
 import { ensureVideoReady, waitForVideoFrame, downloadBlob } from "@/lib/video.utils";
 import { FFmpeg } from "@ffmpeg/ffmpeg";
@@ -74,7 +74,10 @@ export function useVideoExport(
             return;
         }
 
-        if (!video.duration || video.duration === Infinity || isNaN(video.duration)) {
+        const exportClips = settings.videoClips ?? [];
+        const isImageOnly = exportClips.length > 0 && exportClips.every(c => c.type === 'image');
+
+        if (!isImageOnly && (!video.duration || video.duration === Infinity || isNaN(video.duration))) {
             setExportProgress({
                 status: "error",
                 progress: 0,
@@ -105,7 +108,9 @@ export function useVideoExport(
                 message: "Preparando video...",
             });
 
-            await ensureVideoReady(video);
+            if (!isImageOnly) {
+                await ensureVideoReady(video);
+            }
 
             if (cancellationRef.current.cancelled) {
                 throw new Error("Exportación cancelada");
@@ -149,7 +154,7 @@ export function useVideoExport(
             video.muted = true;
 
             const trimStart = settings.trim?.start ?? 0;
-            const trimEnd = settings.trim?.end ?? video.duration;
+            const trimEnd = settings.trim?.end ?? (isImageOnly ? calculateTotalDuration(exportClips) : video.duration);
             const exportDuration = trimEnd - trimStart;
 
             if (settings.quality === "webm-alpha" || settings.transparentBackground) {
@@ -717,7 +722,10 @@ async function exportWithGpuServer(
     const clips = settings.videoClips || [];
     const clipBlobs = settings.videoClipBlobs;
     const hasMultipleClips = !!(settings.videoClips && settings.videoClips.length > 1 && settings.videoClipBlobs);
+    const hasImageScenes = clips.some(c => c.type === 'image');
+    const useClipWalk = (hasMultipleClips || hasImageScenes) && clips.length > 0;
     let currentClipId: string | null = null;
+    let currentClipUrl: string | null = null;
     const formData = new FormData();
     formData.append("fps", String(fps));
     formData.append("width", String(width));
@@ -729,13 +737,14 @@ async function exportWithGpuServer(
     setProgress({ status: "encoding", progress: 5, message: `Capturando ${totalFrames} frames para RTX 4060...` });
 
     video.pause();
-    if (hasMultipleClips && clipBlobs) {
+    if (useClipWalk && clipBlobs) {
         const sortedClips = [...clips].sort((a, b) => a.startTime - b.startTime);
         const firstClip = sortedClips[0];
         if (firstClip && !isImageClip(firstClip)) {
             const blob = clipBlobs.get(firstClip.libraryVideoId);
             if (blob) {
-                video.src = URL.createObjectURL(blob);
+                currentClipUrl = URL.createObjectURL(blob);
+                video.src = currentClipUrl;
                 await new Promise<void>((resolve, reject) => {
                     video.onloadedmetadata = () => resolve();
                     video.onerror = () => reject(new Error("Failed to load video"));
@@ -744,7 +753,7 @@ async function exportWithGpuServer(
                 video.currentTime = firstClip.trimStart;
             }
         }
-    } else {
+    } else if (!useClipWalk) {
         video.currentTime = trimStart;
     }
     await waitForVideoFrame(video);
@@ -754,7 +763,7 @@ async function exportWithGpuServer(
 
         const timelineTime = trimStart + i / fps;
 
-        if (hasMultipleClips && clipBlobs) {
+        if (useClipWalk) {
             const activeClipInfo = getActiveClipAtTime(clips, timelineTime);
             if (activeClipInfo) {
                 const { clip, clipTime } = activeClipInfo;
@@ -764,10 +773,12 @@ async function exportWithGpuServer(
                 } else {
                     canvasHandle.setExportSceneImage(null, 0);
                     if (clip.id !== currentClipId) {
-                        const newBlob = clipBlobs.get(clip.libraryVideoId);
+                        const newBlob = clipBlobs?.get(clip.libraryVideoId);
                         if (newBlob) {
                             video.pause();
-                            video.src = URL.createObjectURL(newBlob);
+                            if (currentClipUrl) URL.revokeObjectURL(currentClipUrl);
+                            currentClipUrl = URL.createObjectURL(newBlob);
+                            video.src = currentClipUrl;
                             await new Promise<void>((resolve, reject) => {
                                 video.onloadedmetadata = () => resolve();
                                 video.onerror = () => reject(new Error("Failed to load video"));
@@ -786,7 +797,7 @@ async function exportWithGpuServer(
         const blob = await canvasToBlobFast(canvas);
         formData.append("frames", blob, `frame${String(i).padStart(5, "0")}.jpg`);
 
-        if (!hasMultipleClips) {
+        if (!useClipWalk) {
             const nextI = i + 1;
             if (nextI < totalFrames) {
                 video.currentTime = Math.min(trimStart + nextI / fps, trimStart + duration - 0.001);
@@ -801,7 +812,7 @@ async function exportWithGpuServer(
             });
         }
 
-        if (!hasMultipleClips) {
+        if (!useClipWalk) {
             const nextI = i + 1;
             if (nextI < totalFrames) {
                 await waitForVideoFrame(video);
@@ -809,6 +820,10 @@ async function exportWithGpuServer(
         }
     }
     canvasHandle.setExportSceneImage(null, 0);
+    if (currentClipUrl) {
+        URL.revokeObjectURL(currentClipUrl);
+        currentClipUrl = null;
+    }
 
     if (cancellation.cancelled) throw new Error("Exportación cancelada");
 
@@ -869,6 +884,8 @@ async function exportWithMediabunnyAndAudio(
     const hasMultipleClips = settings.videoClips && settings.videoClips.length > 1 && settings.videoClipBlobs;
     const clips = settings.videoClips || [];
     const clipBlobs = settings.videoClipBlobs;
+    const hasImageScenes = clips.some(c => c.type === 'image');
+    const useClipWalk = !!((hasMultipleClips || hasImageScenes) && clips.length > 0);
 
     const clipAudioStates = settings.clipAudioStates;
     let hasPerClipAudio = true;
@@ -883,7 +900,7 @@ async function exportWithMediabunnyAndAudio(
     const hasOriginalAudio = !settings.muteOriginalAudio && sourceHasAudioStream && hasPerClipAudio;
     const needsAudioMixing = hasAudioTracks || hasOriginalAudio;
 
-    if (!needsAudioMixing && !hasMultipleClips) {
+    if (!needsAudioMixing && !useClipWalk) {
         return exportWithMediabunny(
             video, canvasHandle, canvas, duration, trimStart, fps,
             bitrate, width, height, setProgress, cancellation
@@ -924,15 +941,16 @@ async function exportWithMediabunnyAndAudio(
     video.pause();
 
     let currentClipId: string | null = null;
+    let currentClipUrl: string | null = null;
 
-    if (hasMultipleClips && clips.length > 0) {
+    if (useClipWalk && clips.length > 0) {
         const sortedClips = [...clips].sort((a, b) => a.startTime - b.startTime);
         const firstClip = sortedClips[0];
-        if (firstClip && clipBlobs) {
+        if (firstClip && !isImageClip(firstClip) && clipBlobs) {
             const blob = clipBlobs.get(firstClip.libraryVideoId);
             if (blob) {
-                const blobUrl = URL.createObjectURL(blob);
-                video.src = blobUrl;
+                currentClipUrl = URL.createObjectURL(blob);
+                video.src = currentClipUrl;
                 await new Promise<void>((resolve, reject) => {
                     video.onloadedmetadata = () => resolve();
                     video.onerror = () => reject(new Error("Failed to load video"));
@@ -945,7 +963,9 @@ async function exportWithMediabunnyAndAudio(
         video.currentTime = trimStart;
     }
 
-    await waitForVideoFrame(video);
+    if (video.src) {
+        await waitForVideoFrame(video);
+    }
 
     for (let frameIndex = 0; frameIndex < totalFrames; frameIndex++) {
         if (cancellation.cancelled) {
@@ -955,7 +975,7 @@ async function exportWithMediabunnyAndAudio(
         const outputTime = frameIndex / fps;
         const timelineTime = trimStart + outputTime;
 
-        if (hasMultipleClips && clipBlobs) {
+        if (useClipWalk) {
             const activeClipInfo = getActiveClipAtTime(clips, timelineTime);
 
             if (activeClipInfo) {
@@ -967,11 +987,12 @@ async function exportWithMediabunnyAndAudio(
                 } else {
                     canvasHandle.setExportSceneImage(null, 0);
                     if (clip.id !== currentClipId) {
-                        const newBlob = clipBlobs.get(clip.libraryVideoId);
+                        const newBlob = clipBlobs?.get(clip.libraryVideoId);
                         if (newBlob) {
-                            const blobUrl = URL.createObjectURL(newBlob);
                             video.pause();
-                            video.src = blobUrl;
+                            if (currentClipUrl) URL.revokeObjectURL(currentClipUrl);
+                            currentClipUrl = URL.createObjectURL(newBlob);
+                            video.src = currentClipUrl;
                             await new Promise<void>((resolve, reject) => {
                                 video.onloadedmetadata = () => resolve();
                                 video.onerror = () => reject(new Error("Failed to load video"));
@@ -989,7 +1010,7 @@ async function exportWithMediabunnyAndAudio(
         await canvasHandle.drawFrame();
         await videoSource.add(outputTime, frameDuration);
 
-        if (!hasMultipleClips) {
+        if (!useClipWalk) {
             const nextFrame = frameIndex + 1;
             if (nextFrame < totalFrames) {
                 video.currentTime = Math.min(trimStart + nextFrame / fps, trimStart + duration - 0.001);
@@ -1001,13 +1022,13 @@ async function exportWithMediabunnyAndAudio(
             setProgress({
                 status: "encoding",
                 progress,
-                message: hasMultipleClips
+                message: useClipWalk
                     ? `Codificando clips ${frameIndex + 1}/${totalFrames}...`
                     : `Codificando video ${frameIndex + 1}/${totalFrames}...`,
             });
         }
 
-        if (!hasMultipleClips) {
+        if (!useClipWalk) {
             const nextFrame = frameIndex + 1;
             if (nextFrame < totalFrames) {
                 await waitForVideoFrame(video);
@@ -1016,6 +1037,10 @@ async function exportWithMediabunnyAndAudio(
     }
 
     canvasHandle.setExportSceneImage(null, 0);
+    if (currentClipUrl) {
+        URL.revokeObjectURL(currentClipUrl);
+        currentClipUrl = null;
+    }
 
     if (cancellation.cancelled) {
         throw new Error("Exportación cancelada");

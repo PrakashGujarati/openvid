@@ -1661,7 +1661,7 @@ export default function Editor() {
             }),
             masterVolume,
             videoClips: videoClips.length > 0 ? videoClips : undefined,
-            videoClipBlobs: videoClips.length > 1 ? videoBlobsRef.current : undefined,
+            videoClipBlobs: videoClips.length > 0 ? videoBlobsRef.current : undefined,
             clipAudioStates: Object.fromEntries(clipAudioStateRef.current),
             getSceneImage: (imageId: string) => imageElementsRef.current.get(imageId) ?? null,
         }).finally(() => {

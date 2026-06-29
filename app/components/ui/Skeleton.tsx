@@ -506,7 +506,7 @@ export function VideosMenuSkeleton() {
       <div className="pt-2 border-t border-white/5 shrink-0 flex justify-center">
         <Skeleton height={10} width="70%" />
       </div>
-      
+
     </div>
   );
 }
@@ -546,7 +546,6 @@ export function ImagesMenuSkeleton() {
               </div>
 
               <div className="flex items-center gap-1 shrink-0">
-                <Skeleton width={28} height={28} variant="square" className="rounded-md" />
                 <Skeleton width={28} height={28} variant="square" className="rounded-md" />
               </div>
             </div>

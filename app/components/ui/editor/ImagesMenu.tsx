@@ -33,7 +33,6 @@ export function ImagesMenu({
   const [images, setImages] = useState<LibraryImageInfo[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [addingId, setAddingId] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -65,14 +64,8 @@ export function ImagesMenu({
     }
   };
 
-  const handleAdd = async (id: string) => {
-    if (addingId || !onAddImageToTrack) return;
-    setAddingId(id);
-    try {
-      onAddImageToTrack(id);
-    } finally {
-      setAddingId(null);
-    }
+  const handleAdd = (id: string) => {
+    onAddImageToTrack?.(id);
   };
 
   const handleFileSelect = useCallback(
@@ -173,18 +166,14 @@ export function ImagesMenu({
                   <div className="flex gap-3 p-2.5 items-center">
                     <div
                       className="relative w-20 h-12 rounded-md overflow-hidden bg-black/50 shrink-0 cursor-pointer"
-                      onClick={() => { if (!addingId) handleAdd(image.id); }}
+                      onClick={() => handleAdd(image.id)}
                     >
                       <img src={image.thumbnailUrl} alt={image.fileName} className="w-full h-full object-cover" />
                       <div className="absolute inset-0 flex items-center justify-center transition-all bg-black/60 opacity-0 group-hover:opacity-100">
-                        {addingId === image.id ? (
-                          <Icon icon="svg-spinners:ring-resize" width="20" className="text-white" />
-                        ) : (
-                          <div className="flex items-center gap-0.5 px-2 py-1 bg-white/10 backdrop-blur-md border border-white/20 rounded-full">
-                            <Icon icon="material-symbols:add-rounded" width="16" className="text-white" />
-                            <span className="text-[9px] font-bold text-white tracking-wider">{t("actions.add")}</span>
-                          </div>
-                        )}
+                        <div className="flex items-center gap-0.5 px-2 py-1 bg-white/10 backdrop-blur-md border border-white/20 rounded-full">
+                          <Icon icon="material-symbols:add-rounded" width="16" className="text-white" />
+                          <span className="text-[9px] font-bold text-white tracking-wider">{t("actions.add")}</span>
+                        </div>
                       </div>
                     </div>
                     <div className="flex-1 min-w-0 flex flex-col justify-center">
