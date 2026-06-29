@@ -5,6 +5,7 @@ import { Output, Mp4OutputFormat, BufferTarget, CanvasSource } from "mediabunny"
 import type { VideoCanvasHandle } from "@/types";
 import type { ExportQuality, ExportSettings, ExportProgress } from "@/types";
 import type { VideoTrackClip } from "@/types/video-track.types";
+import { isImageClip } from "@/types/video-track.types";
 import { QUALITY_SETTINGS, DEFAULT_EXPORT_FPS } from "@/lib/constants";
 import { ensureVideoReady, waitForVideoFrame, downloadBlob } from "@/lib/video.utils";
 import { FFmpeg } from "@ffmpeg/ffmpeg";
@@ -151,21 +152,8 @@ export function useVideoExport(
             const trimEnd = settings.trim?.end ?? video.duration;
             const exportDuration = trimEnd - trimStart;
 
-            if (settings.quality === "gif") {
-                await exportWithFFmpegGif(
-                    video,
-                    canvasHandle,
-                    exportCanvas,
-                    exportDuration,
-                    trimStart,
-                    fps,
-                    targetWidth,
-                    targetHeight,
-                    setExportProgress,
-                    cancellationRef.current
-                );
-            } else if (settings.quality === "webm-alpha" || settings.transparentBackground) {
-
+            if (settings.quality === "webm-alpha" || settings.transparentBackground) {
+                // WebM with alpha channel — NVENC doesn't support transparency, keep WASM path
                 await exportWithFFmpegWebM(
                     video,
                     canvasHandle,
@@ -179,22 +167,52 @@ export function useVideoExport(
                     cancellationRef.current,
                     settings
                 );
-
             } else {
-                await exportWithMediabunnyAndAudio(
-                    video,
-                    canvasHandle,
-                    exportCanvas,
-                    exportDuration,
-                    trimStart,
-                    fps,
-                    qualitySettings.bitrate,
-                    qualitySettings.width,
-                    qualitySettings.height,
-                    setExportProgress,
-                    cancellationRef.current,
-                    settings
-                );
+                // GPU path (RTX 4060 h264_nvenc for MP4, native FFmpeg for GIF)
+                // Falls back to WASM paths on error
+                const isGif = settings.quality === "gif";
+                try {
+                    await exportWithGpuServer(
+                        video,
+                        canvasHandle,
+                        exportCanvas,
+                        exportDuration,
+                        trimStart,
+                        fps,
+                        qualitySettings.bitrate,
+                        targetWidth,
+                        targetHeight,
+                        isGif ? "gif" : "mp4",
+                        setExportProgress,
+                        cancellationRef.current,
+                        settings
+                    );
+                } catch (gpuError) {
+                    if (cancellationRef.current.cancelled) throw gpuError;
+                    console.warn("[GPU Export] Failed, falling back to CPU/WASM:", gpuError);
+                    setExportProgress({ status: "preparing", progress: 2, message: "GPU falló, usando CPU..." });
+
+                    // Reset video position for fallback
+                    video.currentTime = trimStart;
+                    await waitForVideoFrame(video);
+
+                    if (isGif) {
+                        await exportWithFFmpegGif(
+                            video, canvasHandle, exportCanvas,
+                            exportDuration, trimStart, fps,
+                            targetWidth, targetHeight,
+                            setExportProgress, cancellationRef.current
+                        );
+                    } else {
+                        await exportWithMediabunnyAndAudio(
+                            video, canvasHandle, exportCanvas,
+                            exportDuration, trimStart, fps,
+                            qualitySettings.bitrate,
+                            qualitySettings.width, qualitySettings.height,
+                            setExportProgress, cancellationRef.current, settings
+                        );
+                    }
+                }
             }
 
             exportCanvas.width = originalWidth;
@@ -460,6 +478,376 @@ async function exportWithMediabunny(
     });
 }
 
+// ─── Audio mixing helper (shared by GPU and WASM video paths) ────────────────
+// Takes an already-encoded videoBlob and mixes in source/track audio via
+// FFmpeg.wasm with "-c:v copy" so no video re-encode happens.
+async function mixAudioWithWasm(
+    videoBlob: Blob,
+    width: number,
+    height: number,
+    trimStart: number,
+    duration: number,
+    setProgress: (p: ExportProgress) => void,
+    cancellation: CancellationToken,
+    settings: ExportSettings
+): Promise<void> {
+    const hasAudioTracks = settings.audioTracks && settings.audioTracks.length > 0;
+    const sourceHasAudioStream = settings.videoHasAudioTrack !== false;
+    const hasMultipleClips = settings.videoClips && settings.videoClips.length > 1 && settings.videoClipBlobs;
+    const clips = settings.videoClips || [];
+    const clipBlobs = settings.videoClipBlobs;
+    const clipAudioStates = settings.clipAudioStates;
+
+    let hasPerClipAudio = true;
+    if (clipAudioStates) {
+        if (hasMultipleClips) {
+            hasPerClipAudio = clips.some(clip => clipAudioStates[clip.libraryVideoId] !== false);
+        } else if (clips.length > 0) {
+            hasPerClipAudio = clipAudioStates[clips[0].libraryVideoId] !== false;
+        }
+    }
+
+    const hasOriginalAudio = !settings.muteOriginalAudio && sourceHasAudioStream && hasPerClipAudio;
+    const audioClips = (hasOriginalAudio && hasMultipleClips && clipBlobs)
+        ? clips.filter(clip =>
+            (!clipAudioStates || clipAudioStates[clip.libraryVideoId] !== false) &&
+            clipBlobs.has(clip.libraryVideoId)
+        )
+        : [];
+
+    const sourceBlob = (hasOriginalAudio && !hasMultipleClips) ? settings.videoBlob : undefined;
+    const hasUsableSourceBlob = !!(sourceBlob && sourceBlob.size > 0);
+    const hasUsableMultiClipAudio = audioClips.length > 0;
+    const hasUsableAudioTracks = !!(settings.audioTracks && settings.audioTracks.some(t => t.audioUrl));
+
+    if (!hasUsableSourceBlob && !hasUsableMultiClipAudio && !hasUsableAudioTracks) {
+        downloadBlob(videoBlob, `video-export-${width}x${height}.mp4`);
+        setProgress({ status: "complete", progress: 100, message: "¡Exportación completada!" });
+        return;
+    }
+
+    setProgress({ status: "finalizing", progress: 60, message: "Cargando motor de audio..." });
+
+    const ffmpeg = new FFmpeg();
+    const baseURL = `${window.location.origin}/ffmpeg`;
+    await ffmpeg.load({
+        coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, "text/javascript"),
+        wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, "application/wasm"),
+    });
+
+    const videoData = new Uint8Array(await videoBlob.arrayBuffer());
+    await ffmpeg.writeFile("video.mp4", videoData);
+
+    let hasSourceAudio = false;
+    const clipAudioFiles: { clip: (typeof clips)[0]; filename: string }[] = [];
+
+    if (hasOriginalAudio && hasMultipleClips && audioClips.length > 0 && clipBlobs) {
+        for (let i = 0; i < audioClips.length; i++) {
+            const clip = audioClips[i];
+            const blob = clipBlobs.get(clip.libraryVideoId);
+            if (!blob) continue;
+            const filename = `clip_audio_${i}.mp4`;
+            try {
+                const clipData = new Uint8Array(await blob.arrayBuffer());
+                await ffmpeg.writeFile(filename, clipData);
+                try {
+                    await ffmpeg.exec(["-i", filename, "-vn", "-t", "0.1", "-f", "null", "-"]);
+                    clipAudioFiles.push({ clip, filename });
+                } catch {
+                    await ffmpeg.deleteFile(filename).catch(() => {});
+                }
+            } catch (e) {
+                console.warn(`Could not load clip audio ${i}:`, e);
+            }
+        }
+        hasSourceAudio = clipAudioFiles.length > 0;
+    } else if (hasOriginalAudio && !hasMultipleClips && hasUsableSourceBlob) {
+        try {
+            const originalVideoData = new Uint8Array(await sourceBlob!.arrayBuffer());
+            await ffmpeg.writeFile("original.mp4", originalVideoData);
+            try {
+                await ffmpeg.exec(["-i", "original.mp4", "-vn", "-t", "0.1", "-f", "null", "-"]);
+                hasSourceAudio = true;
+            } catch {
+                hasSourceAudio = false;
+                await ffmpeg.deleteFile("original.mp4").catch(() => {});
+            }
+        } catch (e) {
+            console.warn("Could not read video blob for audio:", e);
+        }
+    }
+
+    const audioTracks: { index: number; filename: string; track: NonNullable<typeof settings.audioTracks>[0] }[] = [];
+    if (settings.audioTracks && settings.audioTracks.length > 0) {
+        const fetchResults = await Promise.all(
+            settings.audioTracks.map(async (track, i) => {
+                if (!track.audioUrl) return null;
+                try {
+                    const response = await fetch(track.audioUrl);
+                    const audioData = new Uint8Array(await response.arrayBuffer());
+                    return { index: i, filename: `audio${i}.mp3`, track, audioData };
+                } catch (e) {
+                    console.warn(`Could not load audio track ${i}:`, e);
+                    return null;
+                }
+            })
+        );
+        for (const result of fetchResults) {
+            if (!result) continue;
+            await ffmpeg.writeFile(result.filename, result.audioData);
+            audioTracks.push({ index: result.index, filename: result.filename, track: result.track });
+        }
+    }
+
+    setProgress({ status: "finalizing", progress: 70, message: "Mezclando audio..." });
+
+    const ffmpegArgs: string[] = ["-i", "video.mp4"];
+
+    if (hasSourceAudio) {
+        if (hasMultipleClips && clipAudioFiles.length > 0) {
+            for (const { clip, filename } of clipAudioFiles) {
+                ffmpegArgs.push("-ss", String(clip.trimStart), "-t", String(clip.duration), "-i", filename);
+            }
+        } else {
+            ffmpegArgs.push("-ss", String(trimStart), "-t", String(duration), "-i", "original.mp4");
+        }
+    }
+
+    for (const audioTrackFile of audioTracks) {
+        ffmpegArgs.push("-i", audioTrackFile.filename);
+    }
+
+    const audioInputs: string[] = [];
+    let filterComplex = "";
+    let inputIndex = 1;
+
+    if (hasSourceAudio) {
+        const volume = settings.masterVolume ?? 1;
+        if (hasMultipleClips && clipAudioFiles.length > 0) {
+            for (const { clip } of clipAudioFiles) {
+                const delayMs = Math.round(clip.startTime * 1000);
+                filterComplex += `[${inputIndex}:a]adelay=${delayMs}|${delayMs},volume=${volume}[a${inputIndex}];`;
+                audioInputs.push(`[a${inputIndex}]`);
+                inputIndex++;
+            }
+        } else {
+            filterComplex += `[${inputIndex}:a]volume=${volume}[a${inputIndex}];`;
+            audioInputs.push(`[a${inputIndex}]`);
+            inputIndex++;
+        }
+    }
+
+    for (const audioTrackFile of audioTracks) {
+        const { track } = audioTrackFile;
+        const trackVolume = track.volume * (settings.masterVolume ?? 1);
+        const delayMs = Math.round(track.startTime * 1000);
+        const audioTrimStart = track.trimStart ?? 0;
+        const audioTrimEnd = audioTrimStart + track.duration;
+        filterComplex += `[${inputIndex}:a]atrim=${audioTrimStart}:${audioTrimEnd},asetpts=PTS-STARTPTS,adelay=${delayMs}|${delayMs},volume=${trackVolume}[a${inputIndex}];`;
+        audioInputs.push(`[a${inputIndex}]`);
+        inputIndex++;
+    }
+
+    if (audioInputs.length === 0) {
+        downloadBlob(videoBlob, `video-export-${width}x${height}.mp4`);
+        setProgress({ status: "complete", progress: 100, message: "¡Exportación completada!" });
+        return;
+    }
+
+    filterComplex += `${audioInputs.join("")}amix=inputs=${audioInputs.length}:duration=longest:dropout_transition=0:normalize=0[aout]`;
+    ffmpegArgs.push("-filter_complex", filterComplex);
+    ffmpegArgs.push("-map", "0:v", "-map", "[aout]");
+    // -c:v copy: video was already GPU-encoded, just remux it with audio
+    ffmpegArgs.push("-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "output.mp4");
+
+    ffmpeg.on("progress", ({ progress }) => {
+        if (progress > 0) {
+            const mixProgress = 70 + Math.round(progress * 25);
+            setProgress({
+                status: "finalizing",
+                progress: Math.min(mixProgress, 95),
+                message: `Mezclando audio... ${Math.round(progress * 100)}%`,
+            });
+        }
+    });
+
+    try {
+        await ffmpeg.exec(ffmpegArgs);
+    } catch (e) {
+        console.error("FFmpeg audio mixing failed:", e);
+        downloadBlob(videoBlob, `video-export-${width}x${height}.mp4`);
+        setProgress({ status: "complete", progress: 100, message: "¡Exportación completada (sin mezcla de audio)!" });
+        return;
+    }
+
+    setProgress({ status: "finalizing", progress: 96, message: "Preparando descarga..." });
+
+    const outputData = (await ffmpeg.readFile("output.mp4")) as Uint8Array;
+    const outputBlob = new Blob([new Uint8Array(outputData)], { type: "video/mp4" });
+
+    try {
+        await ffmpeg.deleteFile("video.mp4");
+        await ffmpeg.deleteFile("output.mp4");
+        if (hasSourceAudio && !hasMultipleClips) await ffmpeg.deleteFile("original.mp4").catch(() => {});
+        for (const { filename } of clipAudioFiles) await ffmpeg.deleteFile(filename).catch(() => {});
+        for (const at of audioTracks) await ffmpeg.deleteFile(at.filename).catch(() => {});
+    } catch { /* ignore cleanup errors */ }
+
+    downloadBlob(outputBlob, `video-export-${width}x${height}.mp4`);
+    setProgress({ status: "complete", progress: 100, message: "¡Exportación con audio completada!" });
+}
+
+// ─── GPU export: frames → native FFmpeg h264_nvenc → audio mix ───────────────
+async function exportWithGpuServer(
+    video: HTMLVideoElement,
+    canvasHandle: VideoCanvasHandle,
+    canvas: HTMLCanvasElement,
+    duration: number,
+    trimStart: number,
+    fps: number,
+    bitrate: number,
+    width: number,
+    height: number,
+    format: "mp4" | "gif",
+    setProgress: (p: ExportProgress) => void,
+    cancellation: CancellationToken,
+    settings: ExportSettings
+): Promise<void> {
+    const totalFrames = Math.ceil(duration * fps);
+    const clips = settings.videoClips || [];
+    const clipBlobs = settings.videoClipBlobs;
+    const hasMultipleClips = !!(settings.videoClips && settings.videoClips.length > 1 && settings.videoClipBlobs);
+    let currentClipId: string | null = null;
+    const formData = new FormData();
+    formData.append("fps", String(fps));
+    formData.append("width", String(width));
+    formData.append("height", String(height));
+    formData.append("bitrate", String(bitrate));
+    formData.append("format", format);
+
+    // Phase 1: capture canvas frames as JPEG
+    setProgress({ status: "encoding", progress: 5, message: `Capturando ${totalFrames} frames para RTX 4060...` });
+
+    video.pause();
+    if (hasMultipleClips && clipBlobs) {
+        const sortedClips = [...clips].sort((a, b) => a.startTime - b.startTime);
+        const firstClip = sortedClips[0];
+        if (firstClip && !isImageClip(firstClip)) {
+            const blob = clipBlobs.get(firstClip.libraryVideoId);
+            if (blob) {
+                video.src = URL.createObjectURL(blob);
+                await new Promise<void>((resolve, reject) => {
+                    video.onloadedmetadata = () => resolve();
+                    video.onerror = () => reject(new Error("Failed to load video"));
+                });
+                currentClipId = firstClip.id;
+                video.currentTime = firstClip.trimStart;
+            }
+        }
+    } else {
+        video.currentTime = trimStart;
+    }
+    await waitForVideoFrame(video);
+
+    for (let i = 0; i < totalFrames; i++) {
+        if (cancellation.cancelled) throw new Error("Exportación cancelada");
+
+        const timelineTime = trimStart + i / fps;
+
+        if (hasMultipleClips && clipBlobs) {
+            const activeClipInfo = getActiveClipAtTime(clips, timelineTime);
+            if (activeClipInfo) {
+                const { clip, clipTime } = activeClipInfo;
+                if (isImageClip(clip)) {
+                    const img = clip.imageId ? (settings.getSceneImage?.(clip.imageId) ?? null) : null;
+                    canvasHandle.setExportSceneImage(img, timelineTime - clip.startTime);
+                } else {
+                    canvasHandle.setExportSceneImage(null, 0);
+                    if (clip.id !== currentClipId) {
+                        const newBlob = clipBlobs.get(clip.libraryVideoId);
+                        if (newBlob) {
+                            video.pause();
+                            video.src = URL.createObjectURL(newBlob);
+                            await new Promise<void>((resolve, reject) => {
+                                video.onloadedmetadata = () => resolve();
+                                video.onerror = () => reject(new Error("Failed to load video"));
+                            });
+                            currentClipId = clip.id;
+                        }
+                    }
+                    video.currentTime = clipTime;
+                    await waitForVideoFrame(video);
+                }
+            }
+        }
+
+        await canvasHandle.drawFrame();
+
+        const blob = await canvasToBlobFast(canvas);
+        formData.append("frames", blob, `frame${String(i).padStart(5, "0")}.jpg`);
+
+        if (!hasMultipleClips) {
+            const nextI = i + 1;
+            if (nextI < totalFrames) {
+                video.currentTime = Math.min(trimStart + nextI / fps, trimStart + duration - 0.001);
+            }
+        }
+
+        if (i % 15 === 0 || i === totalFrames - 1) {
+            setProgress({
+                status: "encoding",
+                progress: 5 + Math.round((i / totalFrames) * 50),
+                message: `Frame ${i + 1}/${totalFrames} — enviando a GPU...`,
+            });
+        }
+
+        if (!hasMultipleClips) {
+            const nextI = i + 1;
+            if (nextI < totalFrames) {
+                await waitForVideoFrame(video);
+            }
+        }
+    }
+    canvasHandle.setExportSceneImage(null, 0);
+
+    if (cancellation.cancelled) throw new Error("Exportación cancelada");
+
+    // Phase 2: send frames to server → GPU encode with h264_nvenc
+    setProgress({ status: "encoding", progress: 56, message: "RTX 4060 NVENC: codificando video..." });
+
+    const response = await fetch("/api/export/encode", {
+        method: "POST",
+        body: formData,
+    });
+
+    if (!response.ok) {
+        const err = await response.json().catch(() => ({ error: "GPU encode failed" }));
+        throw new Error(err.error || `GPU encode failed (${response.status})`);
+    }
+
+    setProgress({ status: "finalizing", progress: 72, message: "GPU encoding completo. Procesando audio..." });
+
+    const videoBlob = await response.blob();
+
+    // Phase 3: audio mixing via FFmpeg.wasm with -c:v copy (no video re-encode)
+    const hasAudio = (settings.audioTracks && settings.audioTracks.length > 0) ||
+        (!settings.muteOriginalAudio && settings.videoHasAudioTrack !== false);
+
+    if (!hasAudio || format === "gif") {
+        const ext = format === "gif" ? "gif" : "mp4";
+        const mime = format === "gif" ? "image/gif" : "video/mp4";
+        const finalBlob = new Blob([await videoBlob.arrayBuffer()], { type: mime });
+        downloadBlob(finalBlob, `export-${width}x${height}.${ext}`);
+        setProgress({ status: "complete", progress: 100, message: "¡GPU export completado!" });
+        return;
+    }
+
+    await mixAudioWithWasm(
+        videoBlob, width, height, trimStart, duration,
+        setProgress, cancellation, settings
+    );
+}
+
 // Export with MediaBunny for video + FFmpeg for audio mixing
 async function exportWithMediabunnyAndAudio(
     video: HTMLVideoElement,
@@ -573,22 +961,28 @@ async function exportWithMediabunnyAndAudio(
             if (activeClipInfo) {
                 const { clip, clipTime } = activeClipInfo;
 
-                if (clip.id !== currentClipId) {
-                    const newBlob = clipBlobs.get(clip.libraryVideoId);
-                    if (newBlob) {
-                        const blobUrl = URL.createObjectURL(newBlob);
-                        video.pause();
-                        video.src = blobUrl;
-                        await new Promise<void>((resolve, reject) => {
-                            video.onloadedmetadata = () => resolve();
-                            video.onerror = () => reject(new Error("Failed to load video"));
-                        });
-                        currentClipId = clip.id;
+                if (isImageClip(clip)) {
+                    const img = clip.imageId ? (settings.getSceneImage?.(clip.imageId) ?? null) : null;
+                    canvasHandle.setExportSceneImage(img, timelineTime - clip.startTime);
+                } else {
+                    canvasHandle.setExportSceneImage(null, 0);
+                    if (clip.id !== currentClipId) {
+                        const newBlob = clipBlobs.get(clip.libraryVideoId);
+                        if (newBlob) {
+                            const blobUrl = URL.createObjectURL(newBlob);
+                            video.pause();
+                            video.src = blobUrl;
+                            await new Promise<void>((resolve, reject) => {
+                                video.onloadedmetadata = () => resolve();
+                                video.onerror = () => reject(new Error("Failed to load video"));
+                            });
+                            currentClipId = clip.id;
+                        }
                     }
-                }
 
-                video.currentTime = clipTime;
-                await waitForVideoFrame(video);
+                    video.currentTime = clipTime;
+                    await waitForVideoFrame(video);
+                }
             }
         }
 
@@ -620,6 +1014,8 @@ async function exportWithMediabunnyAndAudio(
             }
         }
     }
+
+    canvasHandle.setExportSceneImage(null, 0);
 
     if (cancellation.cancelled) {
         throw new Error("Exportación cancelada");

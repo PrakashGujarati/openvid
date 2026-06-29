@@ -211,6 +211,8 @@ const VideoCanvasInner = forwardRef<VideoCanvasHandle, VideoCanvasProps>(functio
     const shouldShowCustomColor = backgroundTab === "color" && !!backgroundColorCss;
 
     const exportCanvasRef = useRef<HTMLCanvasElement>(null);
+    const exportSceneImageRef = useRef<HTMLImageElement | null>(null);
+    const exportSceneFrameTimeRef = useRef(0);
     const phoneOverlayRef = useRef<HTMLDivElement>(null);
     // Foreground canvas — used to render the mockup in isolation so that the
     // WebGL 3D perspective is applied only to the mockup, not to the background.
@@ -1023,14 +1025,16 @@ const VideoCanvasInner = forwardRef<VideoCanvasHandle, VideoCanvasProps>(functio
         const ctx = canvas?.getContext('2d', canvasCtxOptions);
         const video = videoRef.current;
         const image = imageRef?.current;
-        const usingScene = mediaType !== "image" && !!currentSceneImage;
-        const mediaSource = usingScene ? currentSceneImage! : (mediaType === "image" ? image : video);
+        const usingExportScene = !!exportSceneImageRef.current;
+        const sceneImg = exportSceneImageRef.current ?? currentSceneImage ?? null;
+        const usingScene = mediaType !== "image" && !!sceneImg;
+        const mediaSource = usingScene ? sceneImg! : (mediaType === "image" ? image : video);
 
         if (!canvas || !ctx || !mediaSource) return;
 
-        const sourceWidth = usingScene ? currentSceneImage!.naturalWidth
+        const sourceWidth = usingScene ? sceneImg!.naturalWidth
             : (mediaType === "image" ? (image?.naturalWidth ?? 0) : (video?.videoWidth ?? 0));
-        const sourceHeight = usingScene ? currentSceneImage!.naturalHeight
+        const sourceHeight = usingScene ? sceneImg!.naturalHeight
             : (mediaType === "image" ? (image?.naturalHeight ?? 0) : (video?.videoHeight ?? 0));
         if (sourceWidth === 0 || sourceHeight === 0) return;
 
@@ -1049,7 +1053,8 @@ const VideoCanvasInner = forwardRef<VideoCanvasHandle, VideoCanvasProps>(functio
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.clearRect(0, 0, canvasWidth, canvasHeight);
 
-        const frameTime = usingScene ? (sceneFrameTime ?? 0) : (mediaType === "video" && video ? video.currentTime : 0);
+        const sceneTime = usingExportScene ? exportSceneFrameTimeRef.current : (sceneFrameTime ?? 0);
+        const frameTime = usingScene ? sceneTime : (mediaType === "video" && video ? video.currentTime : 0);
         const zoomState = calculateSmoothZoom(frameTime, zoomFragments);
         const zoomCenterX = canvasWidth / 2;
         const zoomCenterY = canvasHeight / 2;
@@ -1343,7 +1348,7 @@ const VideoCanvasInner = forwardRef<VideoCanvasHandle, VideoCanvasProps>(functio
             fgCtx.save();
             fgCtx.translate(fgOffsetX, fgOffsetY);
             if (!imagePhoneActive) {
-                drawMockupAndMedia(fgCtx, containerX, containerY, containerWidth, containerHeight, (usingScene ? currentSceneImage! : video!), false);
+                drawMockupAndMedia(fgCtx, containerX, containerY, containerWidth, containerHeight, (usingScene ? sceneImg! : video!), false);
             }
             if (imagePhoneActive && imagePhoneCanvasRef.current) {
                 drawPhone3DCompositeWithZoom(ctx, canvasWidth, canvasHeight, frameTime, zoomState, highQuality);
@@ -1371,7 +1376,7 @@ const VideoCanvasInner = forwardRef<VideoCanvasHandle, VideoCanvasProps>(functio
                     vlCtx.imageSmoothingEnabled = true;
                     vlCtx.imageSmoothingQuality = 'high';
                     if (!imagePhoneActive) {
-                        drawMockupAndMedia(vlCtx, containerX, containerY, containerWidth, containerHeight, (usingScene ? currentSceneImage! : video!), false);
+                        drawMockupAndMedia(vlCtx, containerX, containerY, containerWidth, containerHeight, (usingScene ? sceneImg! : video!), false);
                     }
 
                     vlCtx.globalCompositeOperation = 'destination-in';
@@ -1441,7 +1446,7 @@ const VideoCanvasInner = forwardRef<VideoCanvasHandle, VideoCanvasProps>(functio
                 ctx.save();
                 applyVideoZoom(ctx);
                 if (!imagePhoneActive) {
-                    drawMockupAndMedia(ctx, containerX, containerY, containerWidth, containerHeight, (usingScene ? currentSceneImage! : video!), false);
+                    drawMockupAndMedia(ctx, containerX, containerY, containerWidth, containerHeight, (usingScene ? sceneImg! : video!), false);
                 }
                 ctx.restore();
 
@@ -1644,6 +1649,10 @@ const VideoCanvasInner = forwardRef<VideoCanvasHandle, VideoCanvasProps>(functio
         restoreSelectionState: (state: { multiIds: string[]; videoSelected: boolean }) => {
             setCanvasSelectedIds(state.multiIds);
             setIsVideoSelected(state.videoSelected);
+        },
+        setExportSceneImage: (img: HTMLImageElement | null, frameTime: number) => {
+            exportSceneImageRef.current = img;
+            exportSceneFrameTimeRef.current = frameTime;
         },
     }));
 

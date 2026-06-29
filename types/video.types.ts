@@ -28,6 +28,7 @@ export interface ExportSettings {
     videoClips?: VideoTrackClip[];
     videoClipBlobs?: Map<string, Blob>;
     clipAudioStates?: Record<string, boolean>;
+    getSceneImage?: (imageId: string) => HTMLImageElement | null;
 }
 
 export interface ExportProgress {

@@ -47,6 +47,7 @@ export interface VideoCanvasHandle {
     getPreviewContainer: () => HTMLDivElement | null;
     clearAllSelection: () => { multiIds: string[]; videoSelected: boolean };
     restoreSelectionState: (state: { multiIds: string[]; videoSelected: boolean }) => void;
+    setExportSceneImage: (img: HTMLImageElement | null, frameTime: number) => void;
 }
 
 export interface VideoThumbnail {
