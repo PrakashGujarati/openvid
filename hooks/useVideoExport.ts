@@ -756,7 +756,9 @@ async function exportWithGpuServer(
     } else if (!useClipWalk) {
         video.currentTime = trimStart;
     }
-    await waitForVideoFrame(video);
+    // Skip the frame wait when there is no video source (image-only export):
+    // awaiting a frame on a srcless <video> only resolves via the safety timeout.
+    if (video.src) await waitForVideoFrame(video);
 
     for (let i = 0; i < totalFrames; i++) {
         if (cancellation.cancelled) throw new Error("Exportación cancelada");
