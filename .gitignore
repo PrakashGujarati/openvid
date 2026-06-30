@@ -43,6 +43,7 @@ next-env.d.ts
 
 supabase-setup.sql
 
-BACKEND_SPEC.md
-BACKEND_TESTING.md
+# markdown docs
+*.md
+
 /openvid-back
