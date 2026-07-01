@@ -319,7 +319,7 @@ export function Timeline({
 
     return (
         <div ref={containerRef} className="flex flex-col w-full">
-            <div className="h-38 shrink-0 bg-[#0D0D11] border-t border-white/10 flex flex-col font-mono text-[10px]">
+            <div className="min-h-38 shrink-0 bg-[#0D0D11] border-t border-white/10 flex flex-col font-mono text-[10px]">
                 <div className="flex-1 flex flex-col relative overflow-hidden">
 
                     {/* Label sidebar */}
@@ -619,29 +619,40 @@ export function Timeline({
                                     </div>
                                 </div>
 
-                                {/* Audio track - only show if there are audio tracks */}
-                                {audioTracks.length > 0 && (
-                                    <div className="h-5 shrink-0 flex items-center border-t border-white/5 relative">
-                                        <div
-                                            className="h-full flex items-center relative"
-                                            style={{ width: contentWidth > 0 ? contentWidth : '100%' }}
-                                        >
-                                            {audioTracks.map((track) => {
-                                                const audio = uploadedAudios?.find(a => a.id === track.audioId);
-                                                return (
+                                {/* Audio lanes — one row per track, or a default empty lane */}
+                                {audioTracks.length > 0 ? (
+                                    audioTracks.map((track) => {
+                                        const audio = uploadedAudios?.find(a => a.id === track.audioId);
+                                        return (
+                                            <div
+                                                key={track.id}
+                                                className="h-5 shrink-0 flex items-center border-t border-white/5 relative"
+                                            >
+                                                <div
+                                                    className="h-full flex items-center relative"
+                                                    style={{ width: contentWidth > 0 ? contentWidth : '100%' }}
+                                                >
                                                     <AudioFragmentTrackItem
-                                                        key={track.id}
                                                         track={track}
                                                         audio={audio}
                                                         isSelected={track.id === selectedAudioTrackId}
                                                         contentWidth={contentWidth}
                                                         videoDuration={validDuration}
-                                                        otherTracks={audioTracks.filter(t => t.id !== track.id)}
+                                                        otherTracks={[]}
                                                         onSelect={() => onSelectAudioTrack?.(track.id)}
                                                         onUpdate={(updates) => onUpdateAudioTrack?.(track.id, updates)}
                                                     />
-                                                );
-                                            })}
+                                                </div>
+                                            </div>
+                                        );
+                                    })
+                                ) : (
+                                    <div className="h-5 shrink-0 flex items-center border-t border-white/5 relative">
+                                        <div
+                                            className="h-full flex items-center px-2 text-[9px] text-zinc-600 select-none"
+                                            style={{ width: contentWidth > 0 ? contentWidth : '100%' }}
+                                        >
+                                            <span>{t("emptyAudioLane")}</span>
                                         </div>
                                     </div>
                                 )}
