@@ -688,6 +688,25 @@
     },
     "footer": "Images are stored locally in your browser"
   },
+  "voiceoverModal": {
+    "title": "Select a voice",
+    "useThisVoiceover": "Use this voiceover",
+    "skip": "Skip",
+    "back": "Back",
+    "preview": "Preview",
+    "generating": "Generating…",
+    "genError": "Couldn't generate the voiceover. Check your API keys and try again.",
+    "previewSample": "Hi there! This is how your AI voiceover will sound.",
+    "personas": {
+      "narrator": { "label": "Narrator", "desc": "Smooth, medium pitch" },
+      "educator": { "label": "Educator", "desc": "Friendly, higher pitch" },
+      "teacher": { "label": "Teacher", "desc": "Clear, low pitch" },
+      "persuader": { "label": "Persuader", "desc": "Engaging, low pitch" },
+      "explainer": { "label": "Explainer", "desc": "Lively, low pitch" },
+      "coach": { "label": "Coach", "desc": "Lively, higher pitch" },
+      "motivator": { "label": "Motivator", "desc": "Energetic, medium pitch" }
+    }
+  },
   "elementsMenu": {
     "title": "Elements",
     "tabs": {

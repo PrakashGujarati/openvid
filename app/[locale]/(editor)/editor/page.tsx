@@ -17,7 +17,7 @@ import { useVideoThumbnails, type VideoThumbnail } from "@/hooks/useVideoThumbna
 import { useUndoRedo } from "@/hooks/useUndoRedo";
 import { clearAllThumbnailCache } from "@/lib/thumbnail-cache";
 import { addVideoToLibrary, addVideoToLibraryWithMetadata, getLibraryVideoCount, getLibraryVideo, findExistingVideo } from "@/lib/videos-library";
-import { calculateTotalDuration, findNextClipPosition, getClipAtTime, IMAGE_SCENE_MIN_DURATION, isImageClip, type VideoTrackClip } from "@/types/video-track.types";
+import { calculateTotalDuration, clampImageSceneDuration, findNextClipPosition, getClipAtTime, IMAGE_SCENE_MIN_DURATION, isImageClip, type VideoTrackClip } from "@/types/video-track.types";
 import type { ExportQuality, BackgroundTab, VideoCanvasHandle, BackgroundColorConfig, AspectRatio, CropArea, ZoomFragment, AudioTrack, ImageExportFormat } from "@/types";
 import type { TrimRange } from "@/types/timeline.types";
 import type { MockupConfig, MenuPage } from "@/types/mockup.types";
@@ -54,6 +54,7 @@ const ExportOverlay = lazy(() => import("@/app/components/ui/ExportOverlay").the
 const VideoCropperModal = lazy(() => import("@/app/components/ui/editor/VideoCropperModal").then(mod => ({ default: mod.VideoCropperModal })));
 const ImageCropperModal = lazy(() => import("@/app/components/ui/editor/ImageCropperModal").then(mod => ({ default: mod.ImageCropperModal })));
 const PhotoEditorPlaceholder = lazy(() => import("@/app/components/ui/editor/PhotoEditorPlaceholder").then(mod => ({ default: mod.PhotoEditorPlaceholder })));
+const VoiceoverModal = lazy(() => import("@/app/components/ui/editor/VoiceoverModal").then(mod => ({ default: mod.VoiceoverModal })));
 
 export default function Editor() {
     // Editor mode (video/photo) from URL params
@@ -244,6 +245,8 @@ export default function Editor() {
 
     // Audio state
     const [uploadedAudios, setUploadedAudios] = useState<import("@/types/audio.types").UploadedAudio[]>([]);
+    const uploadedAudiosRef = useRef<import("@/types/audio.types").UploadedAudio[]>([]);
+    useEffect(() => { uploadedAudiosRef.current = uploadedAudios; }, [uploadedAudios]);
     const [audioTracks, setAudioTracks] = useState<import("@/types/audio.types").AudioTrack[]>([]);
     const [muteOriginalAudio, setMuteOriginalAudio] = useState<boolean>(false);
     const [masterVolume, setMasterVolume] = useState<number>(1);
@@ -928,6 +931,16 @@ export default function Editor() {
     const imageSceneStartWallRef = useRef(0);
     const imageSceneStartTimelineRef = useRef(0);
     const currentSceneClipIdRef = useRef<string | null>(null);
+
+    // AI voiceover for image scenes (modal auto-opens after image upload)
+    const [voiceoverModalImage, setVoiceoverModalImage] = useState<{ id: string; name: string } | null>(null);
+    const [isGeneratingVoiceover, setIsGeneratingVoiceover] = useState(false);
+    // imageId -> UploadedAudio id of its generated voiceover
+    const [voiceoverByImageId, setVoiceoverByImageId] = useState<Record<string, string>>({});
+    const voiceoverByImageIdRef = useRef<Record<string, string>>({});
+    useEffect(() => {
+        voiceoverByImageIdRef.current = voiceoverByImageId;
+    }, [voiceoverByImageId]);
 
     // Multi-video playback: store video blobs and URLs indexed by libraryVideoId
     const videoBlobsRef = useRef<Map<string, Blob>>(new Map());
@@ -1835,16 +1848,90 @@ export default function Editor() {
         setIsImageUploading(true);
         try {
             const { addLibraryImage } = await import("@/lib/images-library");
-            await addLibraryImage(file);
+            const libImage = await addLibraryImage(file);
             setImagesLibraryRefresh(n => n + 1);
             setNewImagesCount(n => n + 1);
             setActiveTool("images");
+            // Offer an AI voiceover for the freshly uploaded image.
+            setVoiceoverModalImage({ id: libImage.id, name: libImage.fileName });
         } catch (e) {
             console.error("Image upload failed:", e);
         } finally {
             setIsImageUploading(false);
         }
     }, [setActiveTool]);
+
+    // Register a generated voiceover as an UploadedAudio (Audio section) without
+    // placing it on the timeline yet — it is attached to the timeline together
+    // with its image in handleAddImageToTrack.
+    const registerVoiceoverAudio = useCallback(async (imageId: string, file: File) => {
+        const url = URL.createObjectURL(file);
+        const audio = new Audio(url);
+        await new Promise<void>((resolve, reject) => {
+            audio.addEventListener('loadedmetadata', () => resolve());
+            audio.addEventListener('error', () => reject(new Error('Failed to load audio')));
+        });
+        const newAudio: import("@/types/audio.types").UploadedAudio = {
+            id: `audio-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+            name: file.name,
+            url,
+            duration: audio.duration,
+            fileSize: file.size,
+            mimeType: file.type,
+        };
+        setUploadedAudios(prev => [...prev, newAudio]);
+        setVoiceoverByImageId(prev => ({ ...prev, [imageId]: newAudio.id }));
+    }, []);
+
+    // Generate an AI voiceover for an image: OCR/script (Groq) -> TTS (ElevenLabs).
+    const handleGenerateVoiceover = useCallback(async (persona: import("@/lib/voiceover.config").VoicePersona) => {
+        if (!voiceoverModalImage) return;
+        const { id: imageId, name: imageName } = voiceoverModalImage;
+        setIsGeneratingVoiceover(true);
+        try {
+            const { getLibraryImage } = await import("@/lib/images-library");
+            const libImage = await getLibraryImage(imageId);
+            if (!libImage) throw new Error("Image not found");
+
+            // 1) Script from the image (Groq Qwen2.5-VL)
+            const form = new FormData();
+            form.append("image", libImage.blob, imageName);
+            form.append("tone", persona.tone);
+            const narrateRes = await fetch("/api/narrate", { method: "POST", body: form });
+            if (!narrateRes.ok) {
+                const err = await narrateRes.json().catch(() => ({}));
+                throw new Error(err.error || "Narration failed");
+            }
+            const { script } = await narrateRes.json();
+            if (!script) throw new Error("Empty narration");
+
+            // 2) TTS from the script (ElevenLabs)
+            const ttsRes = await fetch("/api/tts", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ text: script, voiceId: persona.elevenVoiceId }),
+            });
+            if (!ttsRes.ok) {
+                const err = await ttsRes.json().catch(() => ({}));
+                throw new Error(err.error || "TTS failed");
+            }
+            const ttsBlob = await ttsRes.blob();
+
+            // 3) Wrap as a File named after the image and register it in the Audio section
+            const baseName = imageName.replace(/\.[^/.]+$/, "");
+            const ttsFile = new File([ttsBlob], `${baseName}.mp3`, { type: "audio/mpeg" });
+            await registerVoiceoverAudio(imageId, ttsFile);
+
+            setVoiceoverModalImage(null);
+        } catch (e) {
+            console.error("Voiceover generation failed:", e);
+            const msg = e instanceof Error ? e.message : String(e);
+            alert(`No se pudo generar la voz en off.\n\n${msg}`);
+            setVoiceoverModalImage(null);
+        } finally {
+            setIsGeneratingVoiceover(false);
+        }
+    }, [voiceoverModalImage, registerVoiceoverAudio]);
 
     // Handler to remove image scene clips when an image is deleted from the library
     const handleImageDeleteFromLibrary = useCallback((imageId: string) => {
@@ -1859,6 +1946,21 @@ export default function Editor() {
             }
             return remaining;
         });
+        // Drop any generated voiceover attached to this image (Audio section + tracks)
+        const voiceoverAudioId = voiceoverByImageIdRef.current[imageId];
+        if (voiceoverAudioId) {
+            setUploadedAudios(prev => {
+                const audio = prev.find(a => a.id === voiceoverAudioId);
+                if (audio) URL.revokeObjectURL(audio.url);
+                return prev.filter(a => a.id !== voiceoverAudioId);
+            });
+            setAudioTracks(prev => prev.filter(track => track.audioId !== voiceoverAudioId));
+            setVoiceoverByImageId(prev => {
+                const next = { ...prev };
+                delete next[imageId];
+                return next;
+            });
+        }
     }, []);
 
     // Handler to append an image scene clip to the video track
@@ -1878,22 +1980,31 @@ export default function Editor() {
             imageElementsRef.current.set(imageId, img);
         }
 
-        const sceneDuration = IMAGE_SCENE_MIN_DURATION;
+        // If a voiceover was generated for this image, add image + audio together
+        // and stretch the scene to cover the narration.
+        const voiceoverAudioId = voiceoverByImageIdRef.current[imageId];
+        const voiceoverAudio = voiceoverAudioId
+            ? uploadedAudiosRef.current.find(a => a.id === voiceoverAudioId) ?? null
+            : null;
+        const sceneDuration = voiceoverAudio
+            ? clampImageSceneDuration(voiceoverAudio.duration)
+            : IMAGE_SCENE_MIN_DURATION;
+
+        const startTime = findNextClipPosition(videoClipsRef.current);
+        const newClip: VideoTrackClip = {
+            id: crypto.randomUUID(),
+            libraryVideoId: '',
+            imageId,
+            type: 'image',
+            name: libImage.fileName,
+            startTime,
+            duration: sceneDuration,
+            trimStart: 0,
+            trimEnd: sceneDuration,
+            thumbnailUrl: libImage.thumbnailUrl,
+        };
 
         setVideoClips(prevClips => {
-            const startTime = findNextClipPosition(prevClips);
-            const newClip: VideoTrackClip = {
-                id: crypto.randomUUID(),
-                libraryVideoId: '',
-                imageId,
-                type: 'image',
-                name: libImage.fileName,
-                startTime,
-                duration: sceneDuration,
-                trimStart: 0,
-                trimEnd: sceneDuration,
-                thumbnailUrl: libImage.thumbnailUrl,
-            };
             const updatedClips = [...prevClips, newClip];
             setTimeout(() => {
                 const total = calculateTotalDuration(updatedClips);
@@ -1903,7 +2014,24 @@ export default function Editor() {
             }, 0);
             return updatedClips;
         });
-    }, []);
+
+        if (voiceoverAudio) {
+            const audioTrack: import("@/types/audio.types").AudioTrack = {
+                id: `track-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+                audioId: voiceoverAudio.id,
+                name: voiceoverAudio.name,
+                startTime,
+                duration: voiceoverAudio.duration,
+                volume: 1,
+                loop: false,
+            };
+            setAudioTracks(prev => {
+                if (prev.some(t => t.audioId === voiceoverAudio.id)) return prev;
+                return [...prev, audioTrack];
+            });
+            if (audioTracks.length === 0) setMuteOriginalAudio(true);
+        }
+    }, [audioTracks]);
 
     // Handlers for video clip management
     const handleSelectVideoClip = useCallback((clipId: string | null) => {
@@ -3667,6 +3795,21 @@ export default function Editor() {
                         setPendingAudioUpload(null);
                     }}
                 />
+            )}
+
+            {voiceoverModalImage && (
+                <Suspense fallback={null}>
+                    <VoiceoverModal
+                        open={!!voiceoverModalImage}
+                        imageName={voiceoverModalImage.name}
+                        isGenerating={isGeneratingVoiceover}
+                        onSkip={() => {
+                            if (isGeneratingVoiceover) return;
+                            setVoiceoverModalImage(null);
+                        }}
+                        onConfirm={handleGenerateVoiceover}
+                    />
+                </Suspense>
             )}
         </div>
     );

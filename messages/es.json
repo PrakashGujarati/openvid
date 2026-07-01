@@ -644,6 +644,25 @@
     },
     "footer": "Las imágenes se guardan localmente en tu navegador"
   },
+  "voiceoverModal": {
+    "title": "Elige una voz",
+    "useThisVoiceover": "Usar esta voz en off",
+    "skip": "Omitir",
+    "back": "Atrás",
+    "preview": "Escuchar",
+    "generating": "Generando…",
+    "genError": "No se pudo generar la voz en off. Verifica las claves de API e intenta de nuevo.",
+    "previewSample": "¡Hola! Así sonará tu voz en off generada con IA.",
+    "personas": {
+      "narrator": { "label": "Narrador", "desc": "Suave, tono medio" },
+      "educator": { "label": "Educador", "desc": "Amable, tono más alto" },
+      "teacher": { "label": "Profesor", "desc": "Claro, tono bajo" },
+      "persuader": { "label": "Persuasivo", "desc": "Cautivador, tono bajo" },
+      "explainer": { "label": "Explicador", "desc": "Animado, tono bajo" },
+      "coach": { "label": "Coach", "desc": "Animado, tono más alto" },
+      "motivator": { "label": "Motivador", "desc": "Enérgico, tono medio" }
+    }
+  },
   "elementsMenu": {
     "title": "Elementos",
     "tabs": {
