@@ -642,7 +642,6 @@ export function Timeline({
                                                         isSelected={track.id === selectedAudioTrackId}
                                                         contentWidth={contentWidth}
                                                         videoDuration={validDuration}
-                                                        otherTracks={[]}
                                                         onSelect={() => onSelectAudioTrack?.(track.id)}
                                                         onUpdate={(updates) => onUpdateAudioTrack?.(track.id, updates)}
                                                     />

@@ -10,7 +10,6 @@ export function AudioFragmentTrackItem({
     isSelected,
     contentWidth,
     videoDuration,
-    otherTracks,
     onSelect,
     onUpdate,
     onDragStateChange,
@@ -44,29 +43,10 @@ export function AudioFragmentTrackItem({
         }
     }, [initialLeft, visualWidth, isDragging, isResizing, fragmentX, fragmentWidth]);
 
+    // Each track owns its own lane, so bounds are just the full timeline.
     const boundaries = useMemo(() => {
-        const sorted = [...otherTracks]
-            .filter(t => t.id !== track.id)
-            .sort((a, b) => a.startTime - b.startTime);
-
-        let minStart = 0;
-        let maxEnd = videoDuration;
-
-        for (const other of sorted) {
-            const otherEnd = other.startTime + other.duration;
-            const trackEnd = track.startTime + track.duration;
-
-            if (otherEnd <= track.startTime) {
-                minStart = Math.max(minStart, otherEnd);
-            }
-            if (other.startTime >= trackEnd) {
-                maxEnd = Math.min(maxEnd, other.startTime);
-                break;
-            }
-        }
-
-        return { minStart, maxEnd };
-    }, [otherTracks, track.id, track.startTime, track.duration, videoDuration]);
+        return { minStart: 0, maxEnd: videoDuration };
+    }, [videoDuration]);
 
     // ── Drag (mover fragmento completo) ──────────────────────────────
     const handleDrag = useCallback((_e: MouseEvent | TouchEvent | PointerEvent, info: { delta: { x: number } }) => {

@@ -74,7 +74,6 @@ export interface AudioFragmentTrackItemProps {
     isSelected: boolean;
     contentWidth: number;
     videoDuration: number;
-    otherTracks: AudioTrack[];
     onSelect: () => void;
     onUpdate: (updates: Partial<AudioTrack>) => void;
     onDragStateChange?: (isDragging: boolean) => void;
