@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { env } from "@/app/config/env";
 
+// Uses Buffer (Node.js API) for base64 image encoding, so pin to the Node runtime.
+export const runtime = "nodejs";
+
 const GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions";
 
 interface NarrateResult {

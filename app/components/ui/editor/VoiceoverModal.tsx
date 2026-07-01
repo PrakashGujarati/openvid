@@ -166,21 +166,34 @@ export function VoiceoverModal({
                             const isLoading = previewLoadingId === persona.id;
                             const isPlaying = playingId === persona.id;
                             return (
-                                <button
+                                <div
                                     key={persona.id}
-                                    type="button"
-                                    onClick={() => setSelectedId(persona.id)}
-                                    disabled={isGenerating}
-                                    className={`flex items-center gap-3 p-4 rounded-xl border text-left transition-colors disabled:opacity-60 ${
+                                    role="button"
+                                    tabIndex={isGenerating ? -1 : 0}
+                                    aria-pressed={isSelected}
+                                    aria-disabled={isGenerating}
+                                    onClick={() => {
+                                        if (!isGenerating) setSelectedId(persona.id);
+                                    }}
+                                    onKeyDown={(e) => {
+                                        if (isGenerating) return;
+                                        if (e.key === "Enter" || e.key === " ") {
+                                            e.preventDefault();
+                                            setSelectedId(persona.id);
+                                        }
+                                    }}
+                                    className={`flex items-center gap-3 p-4 rounded-xl border text-left cursor-pointer transition-colors ${
+                                        isGenerating ? "opacity-60 pointer-events-none" : ""
+                                    } ${
                                         isSelected
                                             ? "border-blue-500 bg-blue-500/10"
                                             : "border-white/10 bg-white/[0.02] hover:border-white/20 hover:bg-white/5"
                                     }`}
                                 >
-                                    <span
+                                    <button
+                                        type="button"
                                         onClick={(e) => handlePreview(persona, e)}
-                                        role="button"
-                                        tabIndex={0}
+                                        disabled={isGenerating}
                                         aria-label={`${t("preview")} ${t(persona.labelKey)}`}
                                         className={`shrink-0 w-9 h-9 rounded-full flex items-center justify-center transition-colors ${
                                             isSelected
@@ -195,7 +208,7 @@ export function VoiceoverModal({
                                         ) : (
                                             <Icon icon="lucide:play" width="16" />
                                         )}
-                                    </span>
+                                    </button>
                                     <span className="flex-1 min-w-0">
                                         <span className="block text-sm font-medium text-white truncate">
                                             {t(persona.labelKey)}
@@ -212,7 +225,7 @@ export function VoiceoverModal({
                                             aria-hidden="true"
                                         />
                                     )}
-                                </button>
+                                </div>
                             );
                         })}
                     </div>
