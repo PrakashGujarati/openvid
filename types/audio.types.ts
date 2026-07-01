@@ -6,7 +6,9 @@ export interface AudioTrack {
     duration: number;
     volume: number;
     loop: boolean;
-    trimStart?: number; 
+    trimStart?: number;
+    /** Source of this track. Absent is treated as 'upload'. */
+    kind?: 'original' | 'upload' | 'voiceover';
 }
 
 export interface UploadedAudio {
