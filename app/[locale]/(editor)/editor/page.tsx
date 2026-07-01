@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback, lazy, Suspense, useMemo } fro
 import { toBlob } from 'html-to-image';
 import { Icon } from "@iconify/react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useTranslations } from "next-intl";
 import { loadVideoFromIndexedDB, deleteRecordedVideo } from "@/hooks/useScreenRecording";
 import { useVideoUpload } from "@/hooks/useVideoUpload";
 import { useImageProjects } from "@/hooks/useImageProjects";
@@ -47,6 +48,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { TooltipAction } from "@/components/ui/tooltip-action";
 import { bgImagesDelete, bgImagesGetAll, bgImagesSave } from "@/lib/bg-images-idb";
+import { extractAudioFromVideo } from "@/lib/audio-extract.utils";
 
 const ControlPanel = lazy(() => import("@/app/components/ui/editor/ControlPanel").then(mod => ({ default: mod.ControlPanel })));
 const Timeline = lazy(() => import("@/app/components/ui/editor/Timeline").then(mod => ({ default: mod.Timeline })));
@@ -59,6 +61,10 @@ const VoiceoverModal = lazy(() => import("@/app/components/ui/editor/VoiceoverMo
 export default function Editor() {
     // Editor mode (video/photo) from URL params
     const { mode: editorMode, isVideoMode, isPhotoMode } = useEditorMode();
+
+    // i18n — used for the original-audio track label
+    const tAudio = useTranslations("audioMenu");
+    const originalAudioLabel = tAudio("originalTrackName");
 
     // Auth — needed for building production-ready Recipe JSON
     const { user } = useAuth();
@@ -1341,6 +1347,43 @@ export default function Editor() {
         setAudioTracks(prev => prev.filter(track => track.audioId !== audioId));
     }, []);
 
+    // Extract the primary video's original audio into a fully-editable track.
+    // Mutes the <video> element so audio comes from the synced HTMLAudioElement.
+    const extractOriginalAudioTrack = useCallback(async (file: Blob, duration: number) => {
+        try {
+            const result = await extractAudioFromVideo(file);
+            if (!result) return false;
+
+            const audioId = `audio-original-${Date.now()}`;
+            const newAudio: import("@/types/audio.types").UploadedAudio = {
+                id: audioId,
+                name: originalAudioLabel,
+                url: result.url,
+                duration: result.duration,
+                fileSize: 0,
+                mimeType: "audio/wav",
+            };
+            const newTrack: import("@/types/audio.types").AudioTrack = {
+                id: `track-original-${Date.now()}`,
+                audioId,
+                name: originalAudioLabel,
+                startTime: 0,
+                duration: Math.min(result.duration, duration || result.duration),
+                volume: 1,
+                loop: false,
+                kind: "original",
+            };
+
+            setUploadedAudios(prev => [...prev, newAudio]);
+            setAudioTracks(prev => [...prev, newTrack]);
+            setMuteOriginalAudio(true); // avoid double audio; track plays instead
+            return true;
+        } catch (error) {
+            console.warn("Original audio extraction failed:", error);
+            return false;
+        }
+    }, [originalAudioLabel]);
+
     const handleAddAudioTrack = useCallback((audioId: string) => {
         const audio = uploadedAudios.find(a => a.id === audioId);
         if (!audio) return;
@@ -1716,6 +1759,10 @@ export default function Editor() {
             setVideoHasAudioTrack(originalHasAudio);
             if (!originalHasAudio) setMuteOriginalAudio(true);
             clipAudioStateRef.current.set(libraryVideo.id, libraryVideo.hasAudio !== false);
+            if (originalHasAudio) {
+                // Fire-and-forget: extract into an editable track once we know the duration.
+                void extractOriginalAudioTrack(file, 0);
+            }
         }
 
         try {
@@ -1758,7 +1805,7 @@ export default function Editor() {
             setIsPlaying(false);
             setTimeout(() => clearHistory(), 200);
         }
-    }, [uploadVideo, clearHistory]);
+    }, [uploadVideo, clearHistory, extractOriginalAudioTrack]);
 
     // Handler to upload video to the library only (from VideosMenu)
     const handleVideoUploadToLibrary = useCallback(async (file: File) => {
