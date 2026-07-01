@@ -323,7 +323,11 @@ export function Timeline({
                 <div className="flex-1 flex flex-col relative overflow-hidden">
 
                     {/* Label sidebar */}
-                    <LabelSidebar audioTracksCount={audioTracks.length} />
+                    <LabelSidebar
+                        audioLaneLabels={audioTracks.map(track =>
+                            track.kind === 'original' ? t("originalLaneLabel") : track.name
+                        )}
+                    />
                     {/* Scrollable content */}
                     <div
                         ref={trackRef}
