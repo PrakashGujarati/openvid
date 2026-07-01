@@ -1118,7 +1118,9 @@
     "close": "Close"
   },
   "timeline": {
-    "noSpace": "No space"
+    "noSpace": "No space",
+    "emptyAudioLane": "Add music or voiceover",
+    "originalLaneLabel": "Original"
   },
   "audioMenu": {
     "title": "Audio",
@@ -1136,6 +1138,8 @@
     "deleteAction": "Delete audio",
     "noTracks": "No audio tracks",
     "noTracksHint": "Upload an audio file to automatically add it to the timeline",
+    "originalTrackName": "Original audio",
+    "originalBadge": "Original",
     "errors": {
       "unsupportedFormat": "Unsupported audio format. Please use MP3, WAV, OGG, AAC, or M4A.",
       "fileTooLarge": "File is too large. Maximum size is 10MB."

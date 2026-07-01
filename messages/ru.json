@@ -1086,7 +1086,9 @@
     "close": "Закрыть"
   },
   "timeline": {
-    "noSpace": "Нет места"
+    "noSpace": "Нет места",
+    "emptyAudioLane": "Добавьте музыку или озвучку",
+    "originalLaneLabel": "Оригинал"
   },
   "audioMenu": {
     "title": "Аудио",
@@ -1104,6 +1106,8 @@
     "deleteAction": "Удалить аудио",
     "noTracks": "Нет аудиодорожек",
     "noTracksHint": "Загрузите аудиофайл, чтобы автоматически добавить его на таймлайн",
+    "originalTrackName": "Оригинальный звук",
+    "originalBadge": "Оригинал",
     "errors": {
       "unsupportedFormat": "Неподдерживаемый формат аудио. Используйте MP3, WAV, OGG, AAC или M4A.",
       "fileTooLarge": "Файл слишком большой. Максимальный размер — 10 МБ."
