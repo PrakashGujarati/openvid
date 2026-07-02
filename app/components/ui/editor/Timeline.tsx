@@ -44,6 +44,10 @@ export function Timeline({
     selectedAudioTrackId,
     onSelectAudioTrack,
     onUpdateAudioTrack,
+    // Original video audio mute toggle
+    videoHasAudio = false,
+    muteOriginalAudio = false,
+    onToggleMuteOriginalAudio,
 }: TimelineProps) {
     const t = useTranslations("timeline");
     
@@ -327,6 +331,14 @@ export function Timeline({
                         audioLaneLabels={audioTracks.map(track =>
                             track.kind === 'original' ? t("originalLaneLabel") : track.name
                         )}
+                        // The mute toggle only applies to the <video> element's own native audio,
+                        // and only once a video is actually loaded. Once an "original" track exists,
+                        // that track's own volume/mute controls the sound instead (unmuting the
+                        // <video> here would double it up).
+                        videoHasAudio={!!videoUrl && videoHasAudio && !audioTracks.some(track => track.kind === 'original')}
+                        muteOriginalAudio={muteOriginalAudio}
+                        onToggleMuteOriginalAudio={onToggleMuteOriginalAudio}
+                        muteToggleLabel={muteOriginalAudio ? t("unmuteOriginalAudio") : t("muteOriginalAudio")}
                     />
                     {/* Scrollable content */}
                     <div

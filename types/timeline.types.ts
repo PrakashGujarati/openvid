@@ -37,4 +37,8 @@ export interface TimelineProps {
     selectedAudioTrackId?: string | null;
     onSelectAudioTrack?: (trackId: string | null) => void;
     onUpdateAudioTrack?: (trackId: string, updates: Partial<AudioTrack>) => void;
+    // Original video audio mute toggle
+    videoHasAudio?: boolean;
+    muteOriginalAudio?: boolean;
+    onToggleMuteOriginalAudio?: () => void;
 }

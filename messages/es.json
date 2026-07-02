@@ -1098,7 +1098,9 @@
   "timeline": {
     "noSpace": "Sin espacio",
     "emptyAudioLane": "Agrega música o voz",
-    "originalLaneLabel": "Original"
+    "originalLaneLabel": "Original",
+    "muteOriginalAudio": "Silenciar audio original",
+    "unmuteOriginalAudio": "Activar audio original"
   },
   "audioMenu": {
     "title": "Audio",

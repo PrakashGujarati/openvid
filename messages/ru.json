@@ -1088,7 +1088,9 @@
   "timeline": {
     "noSpace": "Нет места",
     "emptyAudioLane": "Добавьте музыку или озвучку",
-    "originalLaneLabel": "Оригинал"
+    "originalLaneLabel": "Оригинал",
+    "muteOriginalAudio": "Выключить оригинальный звук",
+    "unmuteOriginalAudio": "Включить оригинальный звук"
   },
   "audioMenu": {
     "title": "Аудио",

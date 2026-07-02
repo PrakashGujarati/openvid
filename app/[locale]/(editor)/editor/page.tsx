@@ -1324,10 +1324,6 @@ export default function Editor() {
                 };
 
                 setAudioTracks(prev => [...prev, newTrack]);
-
-                if (audioTracks.length === 0) {
-                    setMuteOriginalAudio(true);
-                }
             }
         } catch (error) {
             console.error('Error uploading audio:', error);
@@ -1413,9 +1409,6 @@ export default function Editor() {
         };
 
         setAudioTracks(prev => [...prev, newTrack]);
-        if (audioTracks.length === 0) {
-            setMuteOriginalAudio(true);
-        }
     }, [uploadedAudios, audioTracks]);
 
     const handleUpdateAudioTrack = useCallback((trackId: string, updates: Partial<import("@/types/audio.types").AudioTrack>) => {
@@ -2090,7 +2083,6 @@ export default function Editor() {
                 if (prev.some(t => t.audioId === voiceoverAudio.id)) return prev;
                 return [...prev, audioTrack];
             });
-            if (audioTracks.length === 0) setMuteOriginalAudio(true);
         }
     }, [audioTracks]);
 
@@ -3688,6 +3680,9 @@ export default function Editor() {
                                     selectedAudioTrackId={selectedAudioTrackId}
                                     onSelectAudioTrack={handleSelectAudioTrack}
                                     onUpdateAudioTrack={handleUpdateAudioTrack}
+                                    videoHasAudio={videoHasAudioTrack}
+                                    muteOriginalAudio={muteOriginalAudio}
+                                    onToggleMuteOriginalAudio={handleToggleMuteOriginalAudio}
                                 />
                             </Suspense>
                         </>
@@ -3839,10 +3834,6 @@ export default function Editor() {
                             };
 
                             setAudioTracks(prev => [...prev, newTrack]);
-
-                            if (audioTracks.length === 0) {
-                                setMuteOriginalAudio(true);
-                            }
                         }
                         setAutoTrimModalOpen(false);
                         setPendingAudioUpload(null);

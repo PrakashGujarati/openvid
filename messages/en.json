@@ -1120,7 +1120,9 @@
   "timeline": {
     "noSpace": "No space",
     "emptyAudioLane": "Add music or voiceover",
-    "originalLaneLabel": "Original"
+    "originalLaneLabel": "Original",
+    "muteOriginalAudio": "Mute original audio",
+    "unmuteOriginalAudio": "Unmute original audio"
   },
   "audioMenu": {
     "title": "Audio",
