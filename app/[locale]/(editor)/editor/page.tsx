@@ -1433,6 +1433,17 @@ export default function Editor() {
             if (remaining.length === 0 && deleted?.kind !== 'original') {
                 setMuteOriginalAudio(false);
             }
+            // If no other remaining track still references this audioId, the underlying
+            // UploadedAudio is now orphaned — remove it and revoke its object URL.
+            if (deleted && !remaining.some(track => track.audioId === deleted.audioId)) {
+                setUploadedAudios(prevAudios => {
+                    const audio = prevAudios.find(a => a.id === deleted.audioId);
+                    if (audio) {
+                        URL.revokeObjectURL(audio.url);
+                    }
+                    return prevAudios.filter(a => a.id !== deleted.audioId);
+                });
+            }
             return remaining;
         });
     }, []);
