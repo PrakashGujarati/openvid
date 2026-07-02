@@ -1426,8 +1426,11 @@ export default function Editor() {
 
     const handleDeleteAudioTrack = useCallback((trackId: string) => {
         setAudioTracks(prev => {
+            const deleted = prev.find(track => track.id === trackId);
             const remaining = prev.filter(track => track.id !== trackId);
-            if (remaining.length === 0) {
+            // Deleting the original track should leave the video silent (not restore
+            // its native audio) — only auto-unmute when the last *non-original* track goes away.
+            if (remaining.length === 0 && deleted?.kind !== 'original') {
                 setMuteOriginalAudio(false);
             }
             return remaining;
@@ -2437,7 +2440,7 @@ export default function Editor() {
         if (videoRef.current) {
             videoRef.current.muted = muteOriginalAudio;
         }
-    }, [muteOriginalAudio]);
+    }, [muteOriginalAudio, videoUrl]);
 
     // Keyboard shortcuts for undo/redo
     useEffect(() => {
